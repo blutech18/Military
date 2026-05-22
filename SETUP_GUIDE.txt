@@ -1,0 +1,220 @@
+============================================================
+   ArmoryDB - 10RCDG Firearm Tracking System
+   CLIENT SETUP GUIDE
+============================================================
+
+This guide will help you set up and run the system on your
+Windows computer. Follow each step carefully.
+
+
+============================================================
+STEP 1: INSTALL REQUIRED SOFTWARE
+============================================================
+
+Before anything else, install these programs:
+
+1. XAMPP (includes PHP + MySQL)
+   Download: https://www.apachefriends.org/download.html
+   - Choose the latest version for Windows
+   - Install to the default path: C:\xampp
+   - During installation, make sure Apache and MySQL are selected
+
+2. Composer (PHP package manager)
+   Download: https://getcomposer.org/Composer-Setup.exe
+   - Run the installer
+   - When asked for PHP path, point to: C:\xampp\php\php.exe
+   - Finish the installation
+
+3. Node.js (JavaScript runtime)
+   Download: https://nodejs.org
+   - Choose the LTS (Long Term Support) version
+   - Run the installer with default settings
+
+4. Git (version control)
+   Download: https://git-scm.com/download/win
+   - Run the installer with default settings
+
+After installing all four, RESTART your computer to make
+sure all programs are recognized in the system PATH.
+
+
+============================================================
+STEP 2: CLONE THE PROJECT
+============================================================
+
+1. Open Command Prompt (press Windows + R, type "cmd", Enter)
+
+2. Navigate to where you want the project:
+   cd C:\Projects
+
+3. Clone the repository:
+   git clone https://github.com/blutech18/Military.git
+
+4. Enter the project folder:
+   cd Military
+
+
+============================================================
+STEP 3: RUN THE SETUP SCRIPT
+============================================================
+
+1. Open the "Military" folder in File Explorer
+
+2. Double-click "setup.bat"
+
+3. The script will automatically:
+   - Start MySQL if it's not running
+   - Create the database (armorydb)
+   - Install backend dependencies (Composer)
+   - Generate security keys
+   - Run database migrations (create tables)
+   - Seed the database (create default users and data)
+   - Install frontend dependencies (npm)
+
+4. Wait until you see "SETUP FINISHED SUCCESSFULLY!"
+
+NOTE: This script is safe to run multiple times. If you
+accidentally run it again, it will skip steps already done.
+
+
+============================================================
+STEP 4: START THE APPLICATION
+============================================================
+
+You need TWO terminal windows open:
+
+--- Terminal 1: Backend Server ---
+
+1. Open Command Prompt
+2. Navigate to the backend folder:
+   cd C:\Projects\Military\backend
+3. Start the server:
+   php artisan serve
+
+   You should see: "Server running on http://127.0.0.1:8000"
+   Keep this window open!
+
+--- Terminal 2: Frontend Server ---
+
+1. Open another Command Prompt
+2. Navigate to the frontend folder:
+   cd C:\Projects\Military\frontend
+3. Start the server:
+   npm run dev
+
+   You should see: "Local: http://localhost:3000"
+   Keep this window open!
+
+
+============================================================
+STEP 5: ACCESS THE SYSTEM
+============================================================
+
+Open your web browser and go to:
+
+   http://localhost:3000
+
+Login with the default admin account:
+
+   Username: admin
+   Password: Admin@10RCDG!2025
+
+Other test accounts:
+
+   Username: cmd.officer
+   Password: Command@2025!
+   Role: Command Officer
+
+   Username: s4.officer
+   Password: S4Logistics@2025!
+   Role: S4 Officer
+
+   Username: armory.custodian
+   Password: Custodian@2025!
+   Role: Armory Custodian
+
+   Username: pvt.dela.cruz
+   Password: Personnel@2025!
+   Role: Personnel
+
+   Username: cpl.santos
+   Password: Personnel@2025!
+   Role: Personnel
+
+
+============================================================
+DAILY USE (After Initial Setup)
+============================================================
+
+Every time you want to use the system:
+
+1. Open XAMPP Control Panel and start MySQL
+   (or just run setup.bat — it starts MySQL for you)
+
+2. Open Terminal 1:
+   cd C:\Projects\Military\backend
+   php artisan serve
+
+3. Open Terminal 2:
+   cd C:\Projects\Military\frontend
+   npm run dev
+
+4. Open browser: http://localhost:3000
+
+
+============================================================
+TROUBLESHOOTING
+============================================================
+
+Problem: "MySQL is not running" error
+Solution: Open XAMPP Control Panel and click "Start" next to MySQL
+
+Problem: "php is not recognized" error
+Solution: Add C:\xampp\php to your system PATH:
+  - Search "Environment Variables" in Windows
+  - Edit "Path" under System Variables
+  - Add: C:\xampp\php
+  - Restart Command Prompt
+
+Problem: "composer is not recognized" error
+Solution: Reinstall Composer from https://getcomposer.org/Composer-Setup.exe
+
+Problem: "node is not recognized" error
+Solution: Reinstall Node.js from https://nodejs.org and restart your PC
+
+Problem: "npm install" fails with errors
+Solution: Delete the node_modules folder and try again:
+  cd C:\Projects\Military\frontend
+  rmdir /s /q node_modules
+  npm install
+
+Problem: Port 3000 or 8000 already in use
+Solution: Close other programs using those ports, or:
+  Backend: php artisan serve --port=8001
+  Frontend: npx next dev -p 3001
+
+
+============================================================
+IMPORTANT NOTES
+============================================================
+
+- Do NOT close the terminal windows while using the system.
+  The servers stop when you close them.
+
+- The system only works on YOUR computer (localhost).
+  Other devices on the network cannot access it unless
+  configured for network access.
+
+- If you need to reset the database completely:
+  cd C:\Projects\Military\backend
+  php artisan migrate:fresh --seed
+  (WARNING: This deletes ALL data and starts fresh)
+
+- XAMPP must be installed at C:\xampp for the setup script
+  to work. If installed elsewhere, edit setup.bat and change
+  the XAMPP_PATH variable at the top.
+
+
+============================================================
+   For support, contact the developer.
+============================================================
