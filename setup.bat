@@ -133,6 +133,8 @@ cd /d "%~dp0backend"
 if not exist .env (
     echo       Creating .env from .env.example...
     copy .env.example .env >NUL
+    :: Set default seeder password
+    echo SEED_DEFAULT_PASSWORD=Password@2025!>> .env
 ) else (
     echo       .env already exists, skipping copy.
 )

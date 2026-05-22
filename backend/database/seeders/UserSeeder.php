@@ -13,11 +13,13 @@ class UserSeeder extends Seeder
     {
         $roles = Role::all()->keyBy('role_name');
 
+        // Default seeder password - override via SEED_DEFAULT_PASSWORD env variable
+        $defaultPassword = env('SEED_DEFAULT_PASSWORD', 'Password@2025!');
+
         $users = [
             [
                 'username'           => 'admin',
                 'email'              => 'admin@10rcdg.mil.ph',
-                'password'           => 'Admin@10RCDG!2025',
                 'first_name'         => 'System',
                 'last_name'          => 'Administrator',
                 'rank'               => 'CIV',
@@ -28,7 +30,6 @@ class UserSeeder extends Seeder
             [
                 'username'           => 'cmd.officer',
                 'email'              => 'cmd.officer@10rcdg.mil.ph',
-                'password'           => 'Command@2025!',
                 'first_name'         => 'Mateo',
                 'last_name'          => 'Bautista',
                 'rank'               => 'COL',
@@ -39,7 +40,6 @@ class UserSeeder extends Seeder
             [
                 'username'           => 's4.officer',
                 'email'              => 's4@10rcdg.mil.ph',
-                'password'           => 'S4Logistics@2025!',
                 'first_name'         => 'Joana',
                 'last_name'          => 'Reyes',
                 'rank'               => 'CPT',
@@ -50,7 +50,6 @@ class UserSeeder extends Seeder
             [
                 'username'           => 'armory.custodian',
                 'email'              => 'armory@10rcdg.mil.ph',
-                'password'           => 'Custodian@2025!',
                 'first_name'         => 'Rafael',
                 'last_name'          => 'Salazar',
                 'rank'               => 'SSG',
@@ -61,7 +60,6 @@ class UserSeeder extends Seeder
             [
                 'username'           => 'pvt.dela.cruz',
                 'email'              => 'dela.cruz@10rcdg.mil.ph',
-                'password'           => 'Personnel@2025!',
                 'first_name'         => 'Juan',
                 'last_name'          => 'Dela Cruz',
                 'rank'               => 'PVT',
@@ -72,7 +70,6 @@ class UserSeeder extends Seeder
             [
                 'username'           => 'cpl.santos',
                 'email'              => 'santos@10rcdg.mil.ph',
-                'password'           => 'Personnel@2025!',
                 'first_name'         => 'Miguel',
                 'last_name'          => 'Santos',
                 'rank'               => 'CPL',
@@ -90,7 +87,7 @@ class UserSeeder extends Seeder
                 [
                     'role_id'              => $role->role_id,
                     'email'                => $row['email'],
-                    'password'             => Hash::make($row['password']),
+                    'password'             => Hash::make($defaultPassword),
                     'first_name'           => $row['first_name'],
                     'last_name'            => $row['last_name'],
                     'rank'                 => $row['rank'],

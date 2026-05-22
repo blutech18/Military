@@ -114,32 +114,8 @@ Open your web browser and go to:
 
    http://localhost:3000
 
-Login with the default admin account:
-
-   Username: admin
-   Password: Admin@10RCDG!2025
-
-Other test accounts:
-
-   Username: cmd.officer
-   Password: Command@2025!
-   Role: Command Officer
-
-   Username: s4.officer
-   Password: S4Logistics@2025!
-   Role: S4 Officer
-
-   Username: armory.custodian
-   Password: Custodian@2025!
-   Role: Armory Custodian
-
-   Username: pvt.dela.cruz
-   Password: Personnel@2025!
-   Role: Personnel
-
-   Username: cpl.santos
-   Password: Personnel@2025!
-   Role: Personnel
+Default login credentials are provided separately.
+Please refer to the credentials document given by the developer.
 
 
 ============================================================
