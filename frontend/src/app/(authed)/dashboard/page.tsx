@@ -35,6 +35,10 @@ interface DashboardSummary {
   monthly_transactions?: { month: string; total: number }[];
   recent_transactions?: any[];
   recent_audit?: any[];
+  recent_critical?: any[];
+  maintenance_pipeline?: any[];
+  overdue_items?: any[];
+  today_transactions?: any[];
   my_transactions?: any[];
   my_assigned_ids?: number[];
 }
@@ -84,22 +88,45 @@ function AdminDashboard({ data, isLoading }: { data?: DashboardSummary; isLoadin
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Command Dashboard"
-        subtitle="Real-time situational awareness across the 10RCDG armory."
+        title="System Administration"
+        subtitle="Full oversight of the 10RCDG armory — users, inventory, security, and audit."
         isLoading={isLoading}
       />
       <KpiGrid tiles={kpiTiles} />
       <MapAndCharts data={data} />
       <RecentPanels data={data} />
+      <div className="grid md:grid-cols-4 gap-3">
+        <Link href="/users" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
+          <Users className="h-5 w-5 text-olive-300 mb-2" />
+          <p className="font-semibold text-olive-100 text-sm">User Management</p>
+          <p className="text-xs text-steel-400 mt-1">Create, edit, or deactivate personnel accounts.</p>
+        </Link>
+        <Link href="/settings" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
+          <Shield className="h-5 w-5 text-olive-300 mb-2" />
+          <p className="font-semibold text-olive-100 text-sm">Security Settings</p>
+          <p className="text-xs text-steel-400 mt-1">TOTP, biometric, and session policies.</p>
+        </Link>
+        <Link href="/audit" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
+          <History className="h-5 w-5 text-olive-300 mb-2" />
+          <p className="font-semibold text-olive-100 text-sm">Full Audit Log</p>
+          <p className="text-xs text-steel-400 mt-1">Immutable trail of every system action.</p>
+        </Link>
+        <Link href="/reports" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
+          <BarChart3 className="h-5 w-5 text-olive-300 mb-2" />
+          <p className="font-semibold text-olive-100 text-sm">Reports</p>
+          <p className="text-xs text-steel-400 mt-1">Export inventory, GPS, and security reports.</p>
+        </Link>
+      </div>
     </div>
   );
 }
 
 /* ─────────────────────────── COMMAND OFFICER ─────────────────────────── */
 function CommandDashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: boolean }) {
+  const readiness = data?.kpi.readiness_pct ?? 0;
   const kpiTiles = [
+    { label: "Readiness",       value: readiness,                     Icon: ShieldCheck,   tone: readiness >= 80 ? "text-emerald-300" : "text-amber-300" },
     { label: "Total Firearms",  value: data?.kpi.total_firearms,      Icon: Shield,        tone: "text-olive-200" },
-    { label: "Available",       value: data?.kpi.available,           Icon: ShieldCheck,   tone: "text-emerald-300" },
     { label: "Currently Issued",value: data?.kpi.checked_out,         Icon: Crosshair,     tone: "text-blue-300" },
     { label: "Overdue",         value: data?.kpi.overdue,             Icon: Clock,         tone: "text-red-300" },
     { label: "Personnel",       value: data?.kpi.total_personnel,     Icon: Users,         tone: "text-olive-200" },
@@ -110,25 +137,68 @@ function CommandDashboard({ data, isLoading }: { data?: DashboardSummary; isLoad
     <div className="space-y-6">
       <PageHeader
         title="Command Overview"
-        subtitle="Strategic readiness snapshot — distribution, alerts, and historical patterns."
+        subtitle="Strategic readiness, situational awareness, and security posture."
         isLoading={isLoading}
       />
       <KpiGrid tiles={kpiTiles} />
-      <MapAndCharts data={data} />
+
+      {/* Map — full width for command situational awareness */}
       <div className="glass rounded-xl p-4">
-        <p className="section-title mb-3">Live Audit Feed</p>
-        <ol className="space-y-2 max-h-[320px] overflow-y-auto pr-2">
-          {data?.recent_audit?.map((a: any) => (
-            <li key={a.log_id} className="border-l-2 border-olive-600/40 pl-3 py-1">
-              <p className="text-xs text-olive-200 font-semibold flex justify-between">
-                <span>{a.action}</span>
-                <span className="text-steel-500">{fmtRelative(a.created_at)}</span>
-              </p>
-              <p className="text-xs text-steel-400 truncate">{a.description}</p>
-              <p className="text-[10px] text-steel-500 mt-0.5">{a.user?.username ?? "system"} · {a.ip_address}</p>
-            </li>
-          ))}
-        </ol>
+        <div className="flex justify-between items-center mb-3">
+          <p className="section-title">Operational Map</p>
+          <span className="pill pill-tactical">{data?.kpi.checked_out ?? 0} deployed</span>
+        </div>
+        <div className="h-[450px] rounded-md overflow-hidden">
+          <LiveMap />
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        {/* Critical alerts panel */}
+        <div className="glass rounded-xl p-4">
+          <p className="section-title mb-3 text-red-300">Critical Alerts</p>
+          <ol className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+            {(!data?.recent_critical || data.recent_critical.length === 0) && (
+              <li className="text-sm text-steel-500 text-center py-4">No critical alerts — systems nominal.</li>
+            )}
+            {data?.recent_critical?.map((n: any) => (
+              <li key={n.notification_id} className="border-l-2 border-red-600/50 pl-3 py-1">
+                <p className="text-xs text-red-200 font-semibold">{n.title}</p>
+                <p className="text-xs text-steel-400 truncate">{n.message}</p>
+                <p className="text-[10px] text-steel-500 mt-0.5">{fmtRelative(n.created_at)}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        {/* Audit feed */}
+        <div className="glass rounded-xl p-4">
+          <p className="section-title mb-3">Security Audit Feed</p>
+          <ol className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+            {data?.recent_audit?.map((a: any) => (
+              <li key={a.log_id} className="border-l-2 border-olive-600/40 pl-3 py-1">
+                <p className="text-xs text-olive-200 font-semibold flex justify-between">
+                  <span>{a.action}</span>
+                  <span className="text-steel-500">{fmtRelative(a.created_at)}</span>
+                </p>
+                <p className="text-xs text-steel-400 truncate">{a.description}</p>
+                <p className="text-[10px] text-steel-500 mt-0.5">{a.user?.username ?? "system"} · {a.ip_address}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+
+      {/* Charts — status distribution only, no transaction tables */}
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="glass rounded-xl p-4">
+          <p className="section-title mb-3">Fleet Status</p>
+          <StatusPieChart data={data ? Object.entries(data.by_status ?? {}).map(([name, value]) => ({ name, value })) : []} />
+        </div>
+        <div className="glass rounded-xl p-4">
+          <p className="section-title mb-3">Equipment Condition</p>
+          <ConditionBarChart data={data ? Object.entries(data.by_condition ?? {}).map(([name, value]) => ({ name, value })) : []} />
+        </div>
       </div>
     </div>
   );
@@ -137,24 +207,101 @@ function CommandDashboard({ data, isLoading }: { data?: DashboardSummary; isLoad
 /* ─────────────────────────── S4 OFFICER ─────────────────────────── */
 function S4Dashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: boolean }) {
   const kpiTiles = [
-    { label: "Total Firearms",  value: data?.kpi.total_firearms,      Icon: Shield,        tone: "text-olive-200" },
+    { label: "Total Inventory", value: data?.kpi.total_firearms,      Icon: Shield,        tone: "text-olive-200" },
     { label: "Available",       value: data?.kpi.available,           Icon: ShieldCheck,   tone: "text-emerald-300" },
     { label: "Issued",          value: data?.kpi.checked_out,         Icon: Crosshair,     tone: "text-blue-300" },
-    { label: "Maintenance",     value: data?.kpi.maintenance,         Icon: Wrench,        tone: "text-amber-300" },
-    { label: "Overdue",         value: data?.kpi.overdue,             Icon: Clock,         tone: "text-red-300" },
+    { label: "In Maintenance",  value: data?.kpi.maintenance,         Icon: Wrench,        tone: "text-amber-300" },
+    { label: "Overdue Returns", value: data?.kpi.overdue,             Icon: Clock,         tone: "text-red-300" },
     { label: "Active Tx",       value: data?.kpi.active_transactions, Icon: ShieldAlert,   tone: "text-cyan-300" },
   ];
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Logistics Dashboard"
-        subtitle="Inventory and transaction visibility for S4 Officer."
+        title="Logistics & Supply"
+        subtitle="Inventory turnover, maintenance pipeline, and condition tracking."
         isLoading={isLoading}
       />
       <KpiGrid tiles={kpiTiles} />
-      <MapAndCharts data={data} />
-      <RecentPanels data={data} />
+
+      {/* Charts — condition focus for supply officer */}
+      <div className="grid lg:grid-cols-3 gap-4">
+        <div className="glass rounded-xl p-4">
+          <p className="section-title mb-3">Status Distribution</p>
+          <StatusPieChart data={data ? Object.entries(data.by_status ?? {}).map(([name, value]) => ({ name, value })) : []} />
+        </div>
+        <div className="glass rounded-xl p-4">
+          <p className="section-title mb-3">Condition Breakdown</p>
+          <ConditionBarChart data={data ? Object.entries(data.by_condition ?? {}).map(([name, value]) => ({ name, value })) : []} />
+        </div>
+
+        {/* Maintenance pipeline */}
+        <div className="glass rounded-xl p-4">
+          <p className="section-title mb-3">Maintenance Pipeline</p>
+          <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+            {(!data?.maintenance_pipeline || data.maintenance_pipeline.length === 0) && (
+              <p className="text-sm text-steel-500 text-center py-4">No pending maintenance.</p>
+            )}
+            {data?.maintenance_pipeline?.map((m: any) => (
+              <div key={m.maintenance_id} className="border-l-2 border-amber-500/40 pl-3 py-1">
+                <p className="text-xs text-olive-100 font-mono">{m.firearm?.serial_number ?? "—"}</p>
+                <p className="text-xs text-steel-400">{m.maintenance_type} · due {fmtDate(m.next_schedule)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Overdue items — critical supply-chain concern */}
+      {(data?.overdue_items?.length ?? 0) > 0 && (
+        <div className="glass rounded-xl p-4 border-red-700/30 border">
+          <p className="section-title mb-3 text-red-300">Overdue Returns</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-[10px] uppercase tracking-widest text-olive-300">
+                <tr><th className="text-left py-1">Firearm</th><th className="text-center">Personnel</th><th className="text-center">Expected Return</th></tr>
+              </thead>
+              <tbody>
+                {data?.overdue_items?.map((t: any) => (
+                  <tr key={t.transaction_id} className="border-t border-steel-800">
+                    <td className="py-1.5 text-olive-100 font-mono text-xs">{t.firearm?.serial_number}</td>
+                    <td className="text-center text-steel-300 text-xs">{t.user?.rank} {t.user?.first_name} {t.user?.last_name}</td>
+                    <td className="text-center text-red-300 text-xs">{fmtDate(t.expected_return_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Recent transactions */}
+      <div className="glass rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="section-title">Recent Transactions</p>
+          <Link href="/transactions" className="btn-ghost text-xs text-olive-300">View all</Link>
+        </div>
+        <RecentTxTable rows={data?.recent_transactions ?? []} />
+      </div>
+
+      {/* Quick actions */}
+      <div className="grid md:grid-cols-3 gap-3">
+        <Link href="/firearms" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
+          <Shield className="h-5 w-5 text-olive-300 mb-2" />
+          <p className="font-semibold text-olive-100 text-sm">Inventory</p>
+          <p className="text-xs text-steel-400 mt-1">Manage the full firearm inventory.</p>
+        </Link>
+        <Link href="/maintenance" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
+          <Wrench className="h-5 w-5 text-olive-300 mb-2" />
+          <p className="font-semibold text-olive-100 text-sm">Maintenance</p>
+          <p className="text-xs text-steel-400 mt-1">Schedule and track maintenance cycles.</p>
+        </Link>
+        <Link href="/reports" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
+          <BarChart3 className="h-5 w-5 text-olive-300 mb-2" />
+          <p className="font-semibold text-olive-100 text-sm">Reports</p>
+          <p className="text-xs text-steel-400 mt-1">Export inventory and GPS history.</p>
+        </Link>
+      </div>
     </div>
   );
 }
@@ -162,26 +309,101 @@ function S4Dashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: 
 /* ─────────────────────────── ARMORY CUSTODIAN ─────────────────────────── */
 function CustodianDashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: boolean }) {
   const kpiTiles = [
-    { label: "Available",       value: data?.kpi.available,           Icon: ShieldCheck,   tone: "text-emerald-300" },
-    { label: "Issued",          value: data?.kpi.checked_out,         Icon: Crosshair,     tone: "text-blue-300" },
+    { label: "On Rack",         value: data?.kpi.available,           Icon: ShieldCheck,   tone: "text-emerald-300" },
+    { label: "Issued Out",      value: data?.kpi.checked_out,         Icon: Crosshair,     tone: "text-blue-300" },
     { label: "Maintenance",     value: data?.kpi.maintenance,         Icon: Wrench,        tone: "text-amber-300" },
     { label: "Overdue",         value: data?.kpi.overdue,             Icon: Clock,         tone: "text-red-300" },
-    { label: "Active Tx",       value: data?.kpi.active_transactions, Icon: ShieldAlert,   tone: "text-cyan-300" },
+    { label: "Today's Tx",      value: data?.today_transactions?.length, Icon: ShieldAlert, tone: "text-cyan-300" },
   ];
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Armory Operations"
-        subtitle="Day-to-day armory status and recent transactions."
+        subtitle="Day-to-day rack status, issue/return activity, and overdue tracking."
         isLoading={isLoading}
       />
       <KpiGrid tiles={kpiTiles} />
-      <MapAndCharts data={data} />
 
+      {/* Map — smaller, operational scope */}
       <div className="glass rounded-xl p-4">
-        <p className="section-title mb-3">Recent Transactions</p>
-        <RecentTxTable rows={data?.recent_transactions ?? []} />
+        <div className="flex justify-between items-center mb-3">
+          <p className="section-title">Active GPS Tracking</p>
+          <span className="pill pill-tactical">{data?.kpi.checked_out ?? 0} in field</span>
+        </div>
+        <div className="h-[320px] rounded-md overflow-hidden">
+          <LiveMap />
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        {/* Today's activity */}
+        <div className="glass rounded-xl p-4">
+          <p className="section-title mb-3">Today&apos;s Activity</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-[10px] uppercase tracking-widest text-olive-300">
+                <tr><th className="text-left py-1">Firearm</th><th className="text-center">Personnel</th><th className="text-center">Time</th><th className="text-center">Status</th></tr>
+              </thead>
+              <tbody>
+                {(!data?.today_transactions || data.today_transactions.length === 0) && (
+                  <tr><td colSpan={4} className="text-center py-6 text-steel-500 text-xs">No activity today yet.</td></tr>
+                )}
+                {data?.today_transactions?.map((t: any) => (
+                  <tr key={t.transaction_id} className="border-t border-steel-800">
+                    <td className="py-1.5 text-olive-100 font-mono text-xs">{t.firearm?.serial_number}</td>
+                    <td className="text-center text-steel-300 text-xs">{t.user?.first_name} {t.user?.last_name}</td>
+                    <td className="text-center text-steel-400 text-xs">{fmtRelative(t.checkout_at)}</td>
+                    <td className="text-center"><span className={`pill pill-${t.status === "Active" ? "info" : t.status === "Overdue" ? "critical" : "ok"}`}>{t.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Overdue panel */}
+        <div className="glass rounded-xl p-4 border-red-700/20 border">
+          <p className="section-title mb-3 text-red-300">Overdue Returns</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-[10px] uppercase tracking-widest text-olive-300">
+                <tr><th className="text-left py-1">Firearm</th><th className="text-center">Personnel</th><th className="text-center">Expected</th></tr>
+              </thead>
+              <tbody>
+                {(!data?.overdue_items || data.overdue_items.length === 0) && (
+                  <tr><td colSpan={3} className="text-center py-6 text-steel-500 text-xs">No overdue items.</td></tr>
+                )}
+                {data?.overdue_items?.map((t: any) => (
+                  <tr key={t.transaction_id} className="border-t border-steel-800">
+                    <td className="py-1.5 text-olive-100 font-mono text-xs">{t.firearm?.serial_number}</td>
+                    <td className="text-center text-steel-300 text-xs">{t.user?.rank} {t.user?.first_name} {t.user?.last_name}</td>
+                    <td className="text-center text-red-300 text-xs">{fmtDate(t.expected_return_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick actions */}
+      <div className="grid md:grid-cols-3 gap-3">
+        <Link href="/transactions/new" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
+          <ShieldAlert className="h-5 w-5 text-olive-300 mb-2" />
+          <p className="font-semibold text-olive-100 text-sm">Issue Firearm</p>
+          <p className="text-xs text-steel-400 mt-1">Start a new issuance transaction.</p>
+        </Link>
+        <Link href="/scan" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
+          <Crosshair className="h-5 w-5 text-olive-300 mb-2" />
+          <p className="font-semibold text-olive-100 text-sm">Scan & Return</p>
+          <p className="text-xs text-steel-400 mt-1">Scan QR to process a return.</p>
+        </Link>
+        <Link href="/firearms" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
+          <Shield className="h-5 w-5 text-olive-300 mb-2" />
+          <p className="font-semibold text-olive-100 text-sm">Full Inventory</p>
+          <p className="text-xs text-steel-400 mt-1">Browse all firearms and their status.</p>
+        </Link>
       </div>
     </div>
   );

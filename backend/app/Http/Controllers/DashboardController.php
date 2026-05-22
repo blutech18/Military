@@ -78,13 +78,17 @@ class DashboardController extends Controller
         $byCondition = FirearmEquipment::selectRaw('condition_status, COUNT(*) as total')
             ->groupBy('condition_status')->get()
             ->mapWithKeys(fn($row) => [
-                ['Excellent', 'Good', 'Fair', 'Poor'][$row->condition_status - 1] ?? "Unknown" => $row->total,
+                match ((int) $row->condition_status) {
+                    1 => 'Excellent', 2 => 'Good', 3 => 'Fair', 4 => 'Poor', default => 'Unknown'
+                } => $row->total,
             ]);
 
         $byStatus = FirearmEquipment::selectRaw('availability_status, COUNT(*) as total')
             ->groupBy('availability_status')->get()
             ->mapWithKeys(fn($row) => [
-                ['Available', 'Checked Out', 'Maintenance', 'Overdue'][$row->availability_status - 1] ?? "Unknown" => $row->total,
+                match ((int) $row->availability_status) {
+                    1 => 'Available', 2 => 'Checked Out', 3 => 'Maintenance', 4 => 'Overdue', default => 'Unknown'
+                } => $row->total,
             ]);
 
         $driver = config('database.default');
@@ -102,15 +106,73 @@ class DashboardController extends Controller
         $recentAudit = AuditLog::with('user:user_id,username,first_name,last_name,rank')
             ->latest('created_at')->limit(15)->get();
 
-        return response()->json([
+        // ───────── Role-specific response shaping ─────────
+        $base = [
             'role'                 => $role,
             'kpi'                  => $kpi,
-            'by_condition'         => $byCondition,
-            'by_status'            => $byStatus,
+            'by_condition'         => $byCondition->toArray(),
+            'by_status'            => $byStatus->toArray(),
             'monthly_transactions' => $monthlyTransactions,
+        ];
+
+        // ADMINISTRATOR — everything: full KPIs, all panels.
+        if ($role === 'Administrator') {
+            return response()->json(array_merge($base, [
+                'recent_transactions'  => $recentTransactions,
+                'recent_audit'         => $recentAudit,
+            ]));
+        }
+
+        // COMMAND OFFICER — strategic oversight: audit feed, readiness focus, no transaction management.
+        if ($role === 'Command Officer') {
+            $readinessPct = $kpi['total_firearms'] > 0
+                ? round(($kpi['available'] + $kpi['checked_out']) / $kpi['total_firearms'] * 100, 1)
+                : 0;
+            $base['kpi']['readiness_pct'] = $readinessPct;
+
+            // Recent critical notifications for command awareness.
+            $recentCritical = Notification::where('severity', Notification::SEVERITY_CRITICAL)
+                ->latest('created_at')->limit(10)->get();
+
+            return response()->json(array_merge($base, [
+                'recent_audit'         => $recentAudit,
+                'recent_critical'      => $recentCritical,
+            ]));
+        }
+
+        // S4 OFFICER — logistics & supply: maintenance pipeline, condition trends, inventory turnover.
+        if ($role === 'S4 Officer') {
+            $maintenanceDue = \App\Models\MaintenanceRecord::whereNotNull('next_schedule')
+                ->where('next_schedule', '>=', now())
+                ->with('firearm:equipment_id,serial_number,model')
+                ->orderBy('next_schedule')
+                ->limit(8)->get();
+
+            $overdueItems = Transaction::with(['firearm:equipment_id,serial_number,model', 'user:user_id,first_name,last_name,rank'])
+                ->where('status', Transaction::STATUS_OVERDUE)
+                ->latest('expected_return_at')->limit(10)->get();
+
+            return response()->json(array_merge($base, [
+                'recent_transactions'  => $recentTransactions,
+                'maintenance_pipeline' => $maintenanceDue,
+                'overdue_items'        => $overdueItems,
+            ]));
+        }
+
+        // ARMORY CUSTODIAN — daily operations: transactions, overdue, rack status.
+        $overdueItems = Transaction::with(['firearm:equipment_id,serial_number,model', 'user:user_id,first_name,last_name,rank'])
+            ->where('status', Transaction::STATUS_OVERDUE)
+            ->latest('expected_return_at')->limit(10)->get();
+
+        $todayTransactions = Transaction::with(['firearm:equipment_id,serial_number,model', 'user:user_id,first_name,last_name,rank'])
+            ->whereDate('checkout_at', now()->toDateString())
+            ->latest('checkout_at')->limit(15)->get();
+
+        return response()->json(array_merge($base, [
             'recent_transactions'  => $recentTransactions,
-            'recent_audit'         => $recentAudit,
-        ]);
+            'overdue_items'        => $overdueItems,
+            'today_transactions'   => $todayTransactions,
+        ]));
     }
 
     /**
