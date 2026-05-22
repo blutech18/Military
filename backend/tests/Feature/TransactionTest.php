@@ -1,0 +1,152 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\FirearmEquipment;
+use App\Models\Transaction;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Sanctum\Sanctum;
+use Tests\TestCase;
+
+class TransactionTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->seed();
+    }
+
+    private function actAsArmorer(): User
+    {
+        $user = User::where('username', 'armory.custodian')->first();
+        Sanctum::actingAs($user, ['Armory Custodian']);
+        return $user;
+    }
+
+    private function actAsPersonnel(): User
+    {
+        $user = User::where('username', 'pvt.dela.cruz')->first();
+        Sanctum::actingAs($user, ['Personnel']);
+        return $user;
+    }
+
+    public function test_issue_firearm(): void
+    {
+        $this->actAsArmorer();
+        $firearm = FirearmEquipment::where('availability_status', FirearmEquipment::STATUS_AVAILABLE)->first();
+        $personnel = User::where('username', 'pvt.dela.cruz')->first();
+
+        $response = $this->postJson('/api/v1/transactions/issue', [
+            'equipment_id'       => $firearm->equipment_id,
+            'user_id'            => $personnel->user_id,
+            'expected_return_at' => now()->addHours(8)->toIso8601String(),
+            'purpose'            => 1,
+            'condition_on_issue' => 2,
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJsonFragment(['status' => 'Active']);
+
+        $firearm->refresh();
+        $this->assertEquals(FirearmEquipment::STATUS_CHECKED_OUT, $firearm->availability_status);
+    }
+
+    public function test_cannot_issue_unavailable_firearm(): void
+    {
+        $this->actAsArmorer();
+        $firearm = FirearmEquipment::first();
+        $firearm->update(['availability_status' => FirearmEquipment::STATUS_CHECKED_OUT]);
+        $personnel = User::where('username', 'pvt.dela.cruz')->first();
+
+        $response = $this->postJson('/api/v1/transactions/issue', [
+            'equipment_id'       => $firearm->equipment_id,
+            'user_id'            => $personnel->user_id,
+            'expected_return_at' => now()->addHours(8)->toIso8601String(),
+            'purpose'            => 1,
+            'condition_on_issue' => 2,
+        ]);
+
+        $response->assertStatus(409);
+    }
+
+    public function test_return_firearm(): void
+    {
+        $this->actAsArmorer();
+        $firearm = FirearmEquipment::where('availability_status', FirearmEquipment::STATUS_AVAILABLE)->first();
+        $personnel = User::where('username', 'pvt.dela.cruz')->first();
+
+        // Issue first
+        $issueResp = $this->postJson('/api/v1/transactions/issue', [
+            'equipment_id'       => $firearm->equipment_id,
+            'user_id'            => $personnel->user_id,
+            'expected_return_at' => now()->addHours(8)->toIso8601String(),
+            'purpose'            => 2,
+            'condition_on_issue' => 1,
+        ]);
+        $txId = $issueResp->json('transaction_id');
+
+        // Return
+        $response = $this->patchJson("/api/v1/transactions/{$txId}/return", [
+            'condition_on_return' => 2,
+            'notes'               => 'Returned in good condition.',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonFragment(['status' => 'Returned']);
+
+        $firearm->refresh();
+        $this->assertEquals(FirearmEquipment::STATUS_AVAILABLE, $firearm->availability_status);
+    }
+
+    public function test_personnel_cannot_issue(): void
+    {
+        $this->actAsPersonnel();
+        $firearm = FirearmEquipment::first();
+        $personnel = User::where('username', 'cpl.santos')->first();
+
+        $response = $this->postJson('/api/v1/transactions/issue', [
+            'equipment_id'       => $firearm->equipment_id,
+            'user_id'            => $personnel->user_id,
+            'expected_return_at' => now()->addHours(8)->toIso8601String(),
+            'purpose'            => 1,
+            'condition_on_issue' => 2,
+        ]);
+
+        $response->assertStatus(403);
+    }
+
+    public function test_sweep_overdue(): void
+    {
+        $this->actAsArmorer();
+        $firearm = FirearmEquipment::where('availability_status', FirearmEquipment::STATUS_AVAILABLE)->first();
+        $personnel = User::where('username', 'pvt.dela.cruz')->first();
+
+        // Issue with past expected return
+        Transaction::create([
+            'equipment_id'         => $firearm->equipment_id,
+            'user_id'              => $personnel->user_id,
+            'authorized_by'        => User::where('username', 'armory.custodian')->first()->user_id,
+            'checkout_at'          => now()->subHours(10),
+            'expected_return_at'   => now()->subHours(2),
+            'purpose'              => 1,
+            'status'               => Transaction::STATUS_ACTIVE,
+            'condition_on_issue'   => 2,
+            'gps_tracking_enabled' => true,
+        ]);
+        $firearm->update(['availability_status' => FirearmEquipment::STATUS_CHECKED_OUT]);
+
+        $response = $this->postJson('/api/v1/transactions/sweep-overdue');
+        $response->assertOk();
+        $this->assertGreaterThanOrEqual(1, $response->json('flagged'));
+    }
+
+    public function test_list_transactions(): void
+    {
+        $this->actAsArmorer();
+        $response = $this->getJson('/api/v1/transactions');
+        $response->assertOk()->assertJsonStructure(['data']);
+    }
+}

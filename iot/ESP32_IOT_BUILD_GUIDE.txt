@@ -1,0 +1,912 @@
+ARMORYDB ESP32 GPS TRACKER BUILD GUIDE
+Real-Time GPS-Based Firearm Tracking and Management System
+
+Purpose:
+This guide explains, step by step, how to build and connect the IoT GPS tracker
+for the ArmoryDB system using an ESP32 and a GY-NEO6MV2 GPS module.
+
+Beginner note:
+Do the breadboard version first. Do not solder anything permanently until the
+GPS tracker already works on the Serial Monitor and sends data to the backend.
+
+Safety note:
+For defense/demo, mount the tracker on a training item, dummy unit, case, or
+separate demo enclosure. Do not drill, modify, heat, solder, or glue anything
+directly onto a real firearm unless the institution has formally approved the
+mounting method.
+
+
+============================================================
+1. WHAT YOU NEED TO BUY
+============================================================
+
+A. Minimum working version
+
+1. ESP32-WROOM-32 DevKit
+   - The main WiFi microcontroller.
+   - Recommended: 30-pin ESP32 DevKit V1.
+
+2. GY-NEO6MV2 GPS module with antenna
+   - GPS receiver module.
+   - Usually has pins labeled VCC, RX, TX, GND.
+
+3. Micro USB data cable
+   - Must be a data cable, not charge-only.
+
+4. Jumper wires
+   - Male-to-female or female-to-female depending on your modules.
+
+5. Breadboard
+   - Used for first testing without soldering.
+
+B. Recommended defense/demo version
+
+6. Small plastic project enclosure
+   - Holds the ESP32 and GPS module neatly.
+
+7. Perfboard or prototype PCB
+   - Used after the breadboard test is successful.
+
+8. Female header pins
+   - Lets you plug/unplug ESP32 and GPS module instead of soldering modules
+     permanently.
+
+9. Heat shrink tubing or electrical tape
+   - Insulates solder joints.
+
+10. Small on/off switch
+    - Useful for battery version.
+
+11. USB power bank
+    - Easiest portable power for defense/demo.
+
+C. Optional battery version
+
+12. 3.7V Li-Po battery
+    - Example: 1000 mAh to 2000 mAh.
+
+13. TP4056 Li-Po charging module WITH protection
+    - Charges and protects the Li-Po battery.
+
+14. 5V boost converter module
+    - Converts 3.7V battery output to stable 5V for ESP32 VIN/5V pin.
+
+Important battery note:
+Do not connect a raw 3.7V Li-Po directly to the ESP32 VIN/5V pin and expect it
+to be stable. Most ESP32 DevKit VIN/5V pins expect around 5V. For beginners,
+use a USB power bank. If you need a Li-Po build, use:
+
+Li-Po battery -> TP4056 charger/protection -> 5V boost converter -> ESP32 5V/VIN
+
+D. Optional monitoring/tamper parts
+
+15. Two resistors for battery reading
+    - 100k ohm + 100k ohm recommended for low battery drain.
+
+16. Normally-open reed switch or push switch
+    - Optional tamper input for GPIO27.
+
+
+============================================================
+2. TOOLS YOU NEED
+============================================================
+
+1. Computer or laptop
+2. Arduino IDE 2.x
+3. Small screwdriver
+4. Soldering iron
+5. Solder wire
+6. Wire cutter/stripper
+7. Multimeter
+8. Hot glue or double-sided foam tape
+9. Heat shrink tubing
+10. Marker/label sticker for device ID
+
+Soldering safety:
+- Never solder while the ESP32 is plugged into USB.
+- Never solder while a battery is connected.
+- Work in a ventilated area.
+- Keep the soldering iron away from the GPS antenna and plastic battery.
+- Check for short circuits with a multimeter before powering the device.
+
+
+============================================================
+3. HOW THE IOT TRACKER WORKS
+============================================================
+
+Simple flow:
+
+GPS satellites
+  -> GY-NEO6MV2 GPS module
+  -> ESP32 reads GPS through serial UART
+  -> ESP32 connects to WiFi
+  -> ESP32 creates JSON GPS payload
+  -> ESP32 signs payload using HMAC secret
+  -> Laravel backend verifies the signature
+  -> Backend saves the GPS point to gps_logs
+  -> Frontend live map displays the firearm location
+
+Important:
+The ESP32 cannot use "localhost" to reach your Laravel server.
+"localhost" from the ESP32 means the ESP32 itself, not your laptop.
+Use your laptop's WiFi IP address instead, for example:
+
+http://192.168.1.100:8000/api/v1/gps/ingest
+
+
+============================================================
+3B. BIOMETRIC FINGERPRINT SIDE
+============================================================
+
+Important:
+The biometric fingerprint scanner is NOT connected to the ESP32 GPS tracker.
+
+The project has two separate hardware parts:
+
+1. GPS tracker hardware
+   - ESP32
+   - GY-NEO6MV2 GPS module
+   - Battery or USB power
+   - Sends location to Laravel backend
+
+2. Biometric authentication hardware
+   - Futronic FS80H or FS88H fingerprint scanner
+   - Connected by USB to the Windows computer/laptop used by the armory user
+   - Used during login or user verification
+
+Manuscript/SRS indication:
+The manuscript indicates biometric fingerprint authentication as part of the
+system. It specifically mentions Futronic Windows Fingerprint SDK and Futronic
+FS80H/FS88H biometric scanner integration for the authentication workflow.
+
+Recommended biometric hardware:
+
+1. Futronic FS80H USB Fingerprint Scanner
+   - Common fingerprint scanner for Windows SDK integration.
+
+2. Futronic FS88H USB Fingerprint Scanner
+   - Similar purpose, often used for identity verification systems.
+
+For defense/demo:
+If you do not have the real Futronic device yet, explain that the current web
+biometric flow is a prototype/demo verifier. The production-ready version uses a
+Windows workstation bridge app with the Futronic SDK.
+
+How the real biometric flow should work:
+
+Fingerprint scanner
+  -> connected to Windows laptop by USB
+  -> Futronic driver/SDK captures fingerprint template
+  -> local bridge app sends captured template or verification result
+  -> Laravel backend verifies/enrolls biometric data
+  -> frontend continues login after successful biometric verification
+
+Simple flow:
+
+User enters username/password
+  -> system asks for TOTP if enabled
+  -> system asks for fingerprint if biometric is enabled
+  -> user places finger on Futronic scanner
+  -> scanner/SDK captures fingerprint
+  -> backend verifies identity
+  -> user is signed in
+
+Biometric setup steps for workstation:
+
+Step 1: Buy or borrow Futronic FS80H or FS88H scanner.
+
+Step 2: Plug the scanner into the Windows laptop by USB.
+
+Step 3: Install Futronic driver and SDK.
+- Use the official driver/software package provided with the scanner or from
+  Futronic's official support/download source.
+
+Step 4: Check Windows Device Manager.
+- Open Device Manager.
+- Confirm the Futronic scanner appears without warning icon.
+- If it has a warning icon, reinstall the driver or try another USB port.
+
+Step 5: Test scanner using Futronic sample/demo software.
+- Before connecting it to ArmoryDB, confirm the scanner can capture a fingerprint
+  in the vendor demo application.
+
+Step 6: Connect scanner to the system using a local bridge.
+- Browsers cannot directly use most USB fingerprint scanners like a normal web
+  camera.
+- A Windows bridge app is usually needed.
+- The bridge app communicates with the Futronic SDK locally, then sends the
+  captured fingerprint template or verification result to the Laravel API.
+
+Current project note:
+The existing backend already has this endpoint:
+
+POST /api/v1/auth/biometric/verify
+
+Expected payload:
+
+{
+  "challenge_token": "login challenge token",
+  "fingerprint": "captured fingerprint template or demo template string"
+}
+
+Current implementation status:
+- The current code supports the biometric login step.
+- The current code is demo/prototype style because it receives a fingerprint
+  string/template from the frontend and hashes it.
+- For full real hardware integration, add a Futronic SDK bridge app on Windows.
+
+Beginner defense explanation:
+
+"The GPS tracker and biometric scanner are separate hardware modules. The ESP32
+tracker handles location updates from the firearm, while the Futronic
+fingerprint scanner is connected to the armory workstation for secure personnel
+authentication. During login, the backend can require password, TOTP, and
+fingerprint verification depending on the admin security settings."
+
+
+============================================================
+4. PIN WIRING FOR MINIMUM WORKING VERSION
+============================================================
+
+ESP32 to GY-NEO6MV2 GPS module:
+
++----------------+-----------------------+
+| ESP32 pin      | GPS module pin        |
++----------------+-----------------------+
+| 3V3            | VCC                   |
+| GND            | GND                   |
+| GPIO16 / RX2   | TX                    |
+| GPIO17 / TX2   | RX                    |
++----------------+-----------------------+
+
+Very important:
+TX connects to RX.
+RX connects to TX.
+
+That means:
+- GPS TX goes to ESP32 GPIO16 RX2.
+- GPS RX goes to ESP32 GPIO17 TX2.
+
+Text wiring diagram:
+
+ESP32 3V3          -> GPS VCC
+ESP32 GND          -> GPS GND
+ESP32 GPIO16 RX2   -> GPS TX
+ESP32 GPIO17 TX2   -> GPS RX
+
+GPS antenna position:
+- The square ceramic antenna should face upward.
+- GPS usually does not work properly indoors.
+- First GPS fix can take 30 seconds to 3 minutes.
+
+
+============================================================
+5. BREADBOARD BUILD STEPS
+============================================================
+
+Step 1: Put the ESP32 on the breadboard.
+- Place the ESP32 so each side of pins is on a different side of the center gap.
+
+Step 2: Put the GPS module beside the ESP32.
+- Keep the antenna side facing upward.
+- Do not cover the GPS antenna with metal.
+
+Step 3: Connect GPS power.
+- ESP32 3V3 to GPS VCC.
+- ESP32 GND to GPS GND.
+
+Step 4: Connect GPS serial wires.
+- ESP32 GPIO16 to GPS TX.
+- ESP32 GPIO17 to GPS RX.
+
+Step 5: Check wires again.
+- Wrong power wiring can damage the module.
+- Make sure VCC is not connected to GND.
+
+Step 6: Connect ESP32 to laptop using USB.
+
+Step 7: Open Arduino IDE Serial Monitor later at 115200 baud.
+
+
+============================================================
+6. OPTIONAL BATTERY WIRING
+============================================================
+
+Recommended beginner portable option:
+Use a USB power bank plugged into the ESP32 USB port.
+
+This is the safest and easiest for defense/demo because:
+- No battery soldering needed.
+- Stable 5V power.
+- Easy to recharge.
+- Less chance of damaging ESP32.
+
+Advanced Li-Po option:
+
+Li-Po battery
+  -> TP4056 B+ and B-
+  -> TP4056 OUT+ and OUT-
+  -> 5V boost converter IN+ and IN-
+  -> boost converter 5V OUT+ to ESP32 5V/VIN
+  -> boost converter OUT- to ESP32 GND
+
+Battery wiring table:
+
++-----------------------+-----------------------+
+| From                  | To                    |
++-----------------------+-----------------------+
+| Li-Po positive        | TP4056 B+             |
+| Li-Po negative        | TP4056 B-             |
+| TP4056 OUT+           | Boost IN+             |
+| TP4056 OUT-           | Boost IN-             |
+| Boost 5V OUT+         | ESP32 5V or VIN       |
+| Boost OUT-            | ESP32 GND             |
++-----------------------+-----------------------+
+
+Important:
+- Use a TP4056 module WITH battery protection.
+- Do not short the Li-Po battery.
+- Do not charge unattended.
+- Do not use a swollen or damaged battery.
+
+
+============================================================
+7. OPTIONAL BATTERY PERCENTAGE WIRING
+============================================================
+
+The firmware uses GPIO34 for battery reading.
+GPIO34 is input-only, which is good for analog reading.
+
+Use a voltage divider so the ESP32 ADC pin does not receive full battery voltage.
+
+Recommended resistors:
+- R1 = 100k ohm
+- R2 = 100k ohm
+
+Wiring:
+
+Battery positive
+  -> R1 100k
+  -> middle point
+  -> R2 100k
+  -> GND
+
+Middle point
+  -> ESP32 GPIO34
+
+Text diagram:
+
+Battery+ ---- [100k] ----+---- [100k] ---- GND
+                         |
+                         +---- ESP32 GPIO34
+
+Important:
+All grounds must be connected together:
+- Battery/boost ground
+- ESP32 GND
+- GPS GND
+
+
+============================================================
+8. OPTIONAL TAMPER SWITCH WIRING
+============================================================
+
+The production firmware uses:
+- TAMPER_PIN = GPIO27
+- pinMode(TAMPER_PIN, INPUT_PULLUP)
+- interrupt trigger = FALLING
+
+Beginner-compatible wiring:
+
+Use a normally-open switch between GPIO27 and GND.
+
+When the switch closes:
+- GPIO27 is pulled from HIGH to LOW.
+- Firmware detects FALLING.
+- The tamper flag can be sent.
+
+Wiring:
+
+ESP32 GPIO27 -> one side of switch
+ESP32 GND    -> other side of switch
+
+Note:
+If you use a normally-closed switch instead, the firmware interrupt should be
+changed from FALLING to RISING or CHANGE. For beginners, use normally-open.
+
+
+============================================================
+9. ARDUINO IDE SETUP
+============================================================
+
+Step 1: Install Arduino IDE 2.x.
+
+Step 2: Add ESP32 board package.
+
+In Arduino IDE:
+1. File
+2. Preferences
+3. Additional Boards Manager URLs
+4. Paste this:
+
+https://espressif.github.io/arduino-esp32/package_esp32_index.json
+
+5. Click OK.
+
+Step 3: Install ESP32 boards.
+
+1. Tools
+2. Board
+3. Boards Manager
+4. Search "esp32"
+5. Install "esp32 by Espressif Systems"
+
+Step 4: Install libraries.
+
+Open Library Manager and install:
+1. TinyGPSPlus
+2. ArduinoJson
+
+Step 5: Select board and port.
+
+Board:
+ESP32 Dev Module
+
+Port:
+Choose the COM port that appears when ESP32 is plugged in.
+
+If no COM port appears:
+- Try another USB cable.
+- Install CP2102 driver or CH340 driver depending on your ESP32 board.
+- Try another USB port.
+
+
+============================================================
+10. BACKEND SETUP BEFORE FLASHING ESP32
+============================================================
+
+Step 1: Start MySQL/MariaDB.
+- If using XAMPP, open XAMPP Control Panel and start MySQL.
+
+Step 2: Start Laravel so ESP32 can access it from WiFi.
+
+From:
+D:\Clients\Realtime-GPS\backend
+
+Run:
+php artisan serve --host=0.0.0.0 --port=8000
+
+Important:
+Do not use only "php artisan serve" for ESP32 testing, because that usually
+binds to 127.0.0.1 only. The ESP32 needs your laptop to listen on the network.
+
+Step 3: Find your laptop IP address.
+
+In Windows CMD or PowerShell:
+ipconfig
+
+Look for IPv4 Address under WiFi.
+Example:
+192.168.1.100
+
+Step 4: Check your backend URL.
+
+Open this in your laptop browser:
+http://192.168.1.100:8000/api/health
+
+If that does not work, try:
+http://192.168.1.100:8000/health
+
+If Windows Firewall asks for permission, allow PHP on private networks.
+
+Step 5: Make sure backend .env has the IoT secret.
+
+File:
+D:\Clients\Realtime-GPS\backend\.env
+
+Example:
+IOT_HMAC_SECRET=CHANGE_ME_iot_shared_secret_at_least_32_chars_long_!!
+
+Step 6: Make sure the firearm equipment exists.
+
+In the database, the ESP32 will send:
+equipment_id = 1
+
+That number must exist in firearm_equipment.equipment_id.
+
+Step 7: For the live map to show it clearly, issue the firearm first.
+- Login to frontend.
+- Go to Transactions.
+- Issue the firearm to a user.
+- The firearm status should become Checked Out.
+
+
+============================================================
+11. FIRMWARE CHOICE
+============================================================
+
+Use this for local laptop/XAMPP/demo:
+D:\Clients\Realtime-GPS\iot\firmware\firmware_dev.ino
+
+Use this for real HTTPS deployment:
+D:\Clients\Realtime-GPS\iot\firmware\firmware.ino
+
+Beginner recommendation:
+Start with firmware_dev.ino first.
+
+Why:
+- It uses HTTP.
+- Easier for local testing.
+- No certificate setup needed.
+
+After it works:
+- Move to firmware.ino for HTTPS.
+- Add proper TLS certificate/root CA.
+
+
+============================================================
+12. CONFIGURE firmware_dev.ino
+============================================================
+
+Open:
+D:\Clients\Realtime-GPS\iot\firmware\firmware_dev.ino
+
+Edit these lines:
+
+const char* WIFI_SSID = "YourWiFiName";
+const char* WIFI_PASS = "YourWiFiPassword";
+
+const char* API_URL = "http://192.168.1.100:8000/api/v1/gps/ingest";
+
+const char* DEVICE_ID = "ESP32-001";
+const int EQUIPMENT_ID = 1;
+
+const char* HMAC_SECRET = "CHANGE_ME_iot_shared_secret_at_least_32_chars_long_!!";
+
+Change:
+- YourWiFiName
+- YourWiFiPassword
+- 192.168.1.100 to your laptop IP
+- EQUIPMENT_ID to the correct firearm equipment_id
+- HMAC_SECRET to match backend .env exactly
+
+Important:
+ESP32 only supports 2.4GHz WiFi.
+If your router has separate 2.4GHz and 5GHz names, connect ESP32 to 2.4GHz.
+
+
+============================================================
+13. UPLOAD FIRMWARE TO ESP32
+============================================================
+
+Step 1: Connect ESP32 using USB.
+
+Step 2: In Arduino IDE:
+- Board: ESP32 Dev Module
+- Port: your ESP32 COM port
+- Baud/Serial Monitor: 115200
+
+Step 3: Click Upload.
+
+Step 4: If upload is stuck at "Connecting..."
+- Hold the ESP32 BOOT button.
+- Release it when upload starts.
+
+Step 5: Open Serial Monitor.
+- Set baud to 115200.
+
+Expected boot output:
+
+[WiFi] Connecting to YourWiFiName...
+[WiFi] Connected! IP: 192.168.1.xxx
+[GPS] UART2 started on RX=16, TX=17 at 9600 baud
+[BOOT] Ready! Waiting for GPS fix...
+
+
+============================================================
+14. FIRST GPS TEST
+============================================================
+
+Step 1: Take the GPS module outdoors.
+
+Step 2: Keep the antenna facing upward.
+
+Step 3: Wait 30 seconds to 3 minutes.
+
+Expected early output:
+[GPS] No fix yet - make sure antenna faces the sky (outdoors).
+
+Expected success output:
+[GPS] Lat: 8.xxxxxx Lon: 124.xxxxxx Sats: 7 Alt: 10.0m
+[SEND] OK! HTTP 200 - {"ok":true,"gps_log_id":1,...}
+
+If you see HTTP 200:
+The IoT tracker is already sending valid GPS data to Laravel.
+
+
+============================================================
+15. CHECK THE FRONTEND MAP
+============================================================
+
+Step 1: Start frontend.
+
+From:
+D:\Clients\Realtime-GPS\frontend
+
+Run:
+npm run dev
+
+Step 2: Open:
+http://localhost:3000
+
+Step 3: Login.
+
+Step 4: Go to GPS or Dashboard.
+
+Step 5: Make sure the firearm is Checked Out or Overdue.
+
+The live map filters active tracked firearms, so an Available firearm may not
+show on the live map even if GPS logs are being saved.
+
+Live map data modes:
+
+1. Live IoT
+   - The ESP32 tracker recently sent a valid GPS payload.
+   - This is real current GPS data from the hardware.
+
+2. Last Known
+   - The firearm has a previous GPS point, but the tracker is not currently
+     reporting inside the online window.
+   - The map keeps the last real GPS point visible but labels it as last known.
+
+3. Placeholder
+   - No GPS payload has been received yet for that firearm.
+   - The map uses the firearm's assigned/current location as a placeholder.
+   - This is useful for demo/defense so the interface does not look broken while
+     the GPS device is offline or waiting for first satellite fix.
+
+This means the system prefers real IoT data when available, then falls back to
+last known GPS, then falls back to a clearly labeled placeholder location.
+
+
+============================================================
+16. SOLDERING AFTER BREADBOARD SUCCESS
+============================================================
+
+Only solder after:
+- WiFi connects.
+- GPS gets a fix.
+- Backend returns HTTP 200.
+- Frontend map shows the GPS location.
+
+Recommended permanent build method:
+
+1. Solder female header pins to a perfboard.
+   - One header row for ESP32.
+   - One smaller header row for GPS module.
+   - This lets you remove modules later.
+
+2. Solder short wires under the perfboard:
+   - ESP32 3V3 to GPS VCC
+   - ESP32 GND to GPS GND
+   - ESP32 GPIO16 to GPS TX
+   - ESP32 GPIO17 to GPS RX
+
+3. Add optional switch wiring if battery-powered.
+
+4. Add optional battery voltage divider if needed.
+
+5. Inspect all solder joints.
+   - Good solder joint: shiny cone shape.
+   - Bad solder joint: dull, cracked, or blob touching other pins.
+
+6. Use a multimeter continuity mode.
+   - Check 3V3 is not shorted to GND.
+   - Check 5V/VIN is not shorted to GND.
+   - Check each signal wire goes to the correct pin.
+
+7. Power with USB first.
+   - Do not test first power-up with Li-Po battery.
+
+8. If USB test is successful, test battery/power bank.
+
+
+============================================================
+17. ENCLOSURE BUILD
+============================================================
+
+Recommended defense/demo enclosure:
+
+1. Use a plastic project box.
+2. Drill/cut one hole for USB cable or power switch.
+3. Put ESP32 inside with USB port accessible.
+4. Place GPS antenna near the top/lid.
+5. Do not cover GPS antenna with metal.
+6. Use foam tape or hot glue to secure modules.
+7. Label the outside:
+   - DEVICE_ID
+   - EQUIPMENT_ID
+   - WiFi network used
+
+For GPS performance:
+- Plastic enclosure is okay.
+- Metal enclosure is bad for GPS signal.
+- Keep antenna facing upward.
+
+
+============================================================
+18. DEFENSE DAY CHECKLIST
+============================================================
+
+One day before defense:
+
+[ ] Test backend login.
+[ ] Test MySQL is running.
+[ ] Test frontend dashboard.
+[ ] Test php artisan serve with --host=0.0.0.0.
+[ ] Confirm laptop IP address.
+[ ] Confirm ESP32 firmware API_URL uses that laptop IP.
+[ ] Confirm HMAC_SECRET matches backend .env.
+[ ] Confirm equipment_id exists.
+[ ] Issue firearm in system so status is Checked Out.
+[ ] Test GPS outdoors.
+[ ] Confirm HTTP 200 in Serial Monitor.
+[ ] Confirm map marker appears.
+[ ] If using real biometric hardware, plug in Futronic FS80H/FS88H scanner.
+[ ] Confirm Futronic driver is installed in Windows Device Manager.
+[ ] Test fingerprint capture using Futronic sample/demo software.
+[ ] If no real scanner is available, prepare to explain the biometric flow as
+    prototype/demo mode and show the admin toggle plus biometric login screen.
+[ ] Charge power bank or battery.
+[ ] Bring USB cable.
+[ ] Bring backup jumper wires.
+[ ] Bring biometric scanner USB cable if using real scanner.
+[ ] Bring laptop charger.
+[ ] Bring simulator backup.
+
+On defense day:
+
+[ ] Start XAMPP MySQL.
+[ ] Start Laravel backend:
+    php artisan serve --host=0.0.0.0 --port=8000
+[ ] Start frontend:
+    npm run dev
+[ ] Power ESP32.
+[ ] Open Serial Monitor if demonstrating hardware logs.
+[ ] Move near window/outdoors for GPS fix.
+[ ] Show dashboard live map.
+[ ] Show GPS logs and notifications.
+
+Backup plan:
+If GPS cannot get a satellite fix indoors, use the simulator to demonstrate the
+backend and live map while explaining that real GPS requires sky visibility.
+
+
+============================================================
+19. TROUBLESHOOTING
+============================================================
+
+Problem: ESP32 does not appear as COM port.
+Fix:
+- Try another USB cable.
+- Try another USB port.
+- Install CP2102 or CH340 driver.
+
+Problem: Upload stuck at "Connecting..."
+Fix:
+- Hold BOOT button during upload.
+- Release when upload starts.
+
+Problem: WiFi fails.
+Fix:
+- Check SSID and password.
+- Use 2.4GHz WiFi only.
+- Move closer to router.
+
+Problem: GPS says "No fix yet."
+Fix:
+- Go outdoors.
+- Face antenna upward.
+- Wait 3 minutes.
+- Check GPS TX to ESP32 GPIO16.
+- Check GPS VCC and GND.
+
+Problem: HTTP connection refused.
+Fix:
+- Start Laravel with:
+  php artisan serve --host=0.0.0.0 --port=8000
+- Use laptop IP, not localhost.
+- Allow PHP through Windows Firewall.
+- Make sure ESP32 and laptop are on same WiFi.
+
+Problem: HTTP 401 invalid signature.
+Fix:
+- HMAC_SECRET in firmware must exactly match IOT_HMAC_SECRET in backend .env.
+- No extra spaces.
+- Restart Laravel after changing .env.
+
+Problem: HTTP 422 validation error.
+Fix:
+- equipment_id must exist in database.
+- latitude and longitude must be valid.
+- captured_at must be a valid date/time.
+
+Problem: HTTP 503 database unavailable.
+Fix:
+- Start MySQL/MariaDB in XAMPP.
+- Check backend .env DB settings.
+
+Problem: GPS logs save but marker does not show on map.
+Fix:
+- Make sure firearm is Checked Out or Overdue.
+- Check equipment_id matches the issued firearm.
+- Refresh frontend.
+
+
+============================================================
+20. MINIMUM SUCCESS CRITERIA
+============================================================
+
+The IoT build is ready when all of these are true:
+
+[ ] ESP32 powers on safely.
+[ ] ESP32 connects to WiFi.
+[ ] GPS module gets satellite fix.
+[ ] Serial Monitor prints latitude and longitude.
+[ ] ESP32 POST returns HTTP 200.
+[ ] Backend gps_logs table receives new records.
+[ ] Frontend live map shows the firearm.
+[ ] Device can run for the expected demo duration.
+[ ] You have a simulator backup ready.
+
+
+============================================================
+21. QUICK WIRING CARD
+============================================================
+
+Minimum GPS wiring:
+
+ESP32 3V3        -> GPS VCC
+ESP32 GND        -> GPS GND
+ESP32 GPIO16 RX2 -> GPS TX
+ESP32 GPIO17 TX2 -> GPS RX
+
+Optional battery percentage:
+
+Battery+ -> 100k -> middle -> 100k -> GND
+middle -> ESP32 GPIO34
+
+Optional tamper:
+
+ESP32 GPIO27 -> normally-open switch -> GND
+
+Recommended local API URL pattern:
+
+http://YOUR_LAPTOP_IP:8000/api/v1/gps/ingest
+
+Example:
+
+http://192.168.1.100:8000/api/v1/gps/ingest
+
+Never use this in ESP32 firmware:
+
+http://localhost:8000/api/v1/gps/ingest
+
+
+============================================================
+22. SIMPLE EXPLANATION FOR DEFENSE
+============================================================
+
+You can explain the IoT part like this:
+
+"The ESP32 acts as the wireless tracker. It reads coordinates from the
+GY-NEO6MV2 GPS module through UART serial communication. Every configured
+interval, the ESP32 creates a JSON payload containing the firearm equipment ID,
+device ID, timestamp, latitude, longitude, satellite count, and battery level.
+Before sending, the payload is signed using HMAC-SHA256 with a shared secret.
+The Laravel backend verifies this signature before accepting the GPS record.
+Once saved, the frontend dashboard displays the firearm location on the live
+map and can trigger geofence alerts."
+
+
+END OF GUIDE
