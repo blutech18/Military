@@ -36,10 +36,16 @@ jobs:
           touch database/database.sqlite
           php artisan migrate --force --seed
         working-directory: backend
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: database/database.sqlite
 
       - name: PHPUnit
         run: php artisan test
         working-directory: backend
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: database/database.sqlite
 
   frontend:
     name: Next.js Frontend
@@ -59,3 +65,5 @@ jobs:
       - name: Build
         run: npm run build
         working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000

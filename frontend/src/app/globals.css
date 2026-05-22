@@ -1,0 +1,113 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 13% 9%;
+    --foreground: 60 9% 90%;
+
+    --card: 220 13% 12%;
+    --card-foreground: 60 9% 90%;
+
+    --primary: 75 36% 30%;
+    --primary-foreground: 60 9% 96%;
+
+    --secondary: 215 16% 22%;
+    --secondary-foreground: 60 9% 88%;
+
+    --muted: 215 16% 18%;
+    --muted-foreground: 60 5% 65%;
+
+    --accent: 75 36% 25%;
+    --accent-foreground: 60 9% 95%;
+
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 215 14% 22%;
+    --input: 215 14% 22%;
+    --ring: 75 36% 45%;
+
+    --radius: 0.6rem;
+  }
+
+  * { @apply border-border; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    background-image:
+      linear-gradient(rgba(174, 183, 113, 0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(174, 183, 113, 0.04) 1px, transparent 1px),
+      radial-gradient(ellipse at top, rgba(86, 99, 53, 0.22), transparent 60%);
+    background-size: 32px 32px, 32px 32px, 100% 100%;
+    background-attachment: fixed;
+  }
+
+  ::selection { @apply bg-olive-600/40 text-olive-50; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar         { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-track   { background: transparent; }
+  ::-webkit-scrollbar-thumb   { @apply bg-steel-700 rounded-md; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-olive-700; }
+}
+
+@layer components {
+  /* Glassmorphism panel */
+  .glass {
+    @apply backdrop-blur-md bg-steel-800/60 border border-olive-700/40 shadow-[0_8px_32px_rgba(0,0,0,0.45)];
+  }
+
+  /* KPI tile */
+  .kpi-tile {
+    @apply glass rounded-xl p-4 transition-all hover:border-olive-500/70 hover:shadow-[0_0_24px_rgba(118,128,58,0.25)];
+  }
+
+  /* Section heading */
+  .section-title {
+    @apply text-sm uppercase tracking-[0.18em] text-olive-300 font-semibold;
+  }
+
+  /* Status pill */
+  .pill {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium uppercase tracking-wide;
+  }
+  .pill-ok       { @apply bg-emerald-700/30  text-emerald-200 border border-emerald-600/40; }
+  .pill-warn     { @apply bg-amber-700/30    text-amber-200   border border-amber-600/40;   }
+  .pill-critical { @apply bg-red-700/30      text-red-200     border border-red-600/40;     }
+  .pill-info     { @apply bg-blue-700/30     text-blue-200    border border-blue-600/40;    }
+  .pill-muted    { @apply bg-steel-700/40    text-steel-200   border border-steel-600/40;   }
+  .pill-tactical { @apply bg-olive-700/40    text-olive-100   border border-olive-500/40;   }
+
+  /* Tactical button */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition-all
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-olive-400/70
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary   { @apply btn bg-olive-600 text-olive-50 hover:bg-olive-500 active:bg-olive-700; }
+  .btn-secondary { @apply btn bg-steel-700 text-steel-100 hover:bg-steel-600; }
+  .btn-ghost     { @apply btn hover:bg-steel-800 text-steel-200; }
+  .btn-danger    { @apply btn bg-red-700 text-red-50 hover:bg-red-600; }
+
+  .input-field {
+    @apply w-full rounded-md bg-steel-900/70 border border-olive-700/30 px-3 py-2 text-steel-100
+           placeholder:text-steel-400 focus:outline-none focus:ring-2 focus:ring-olive-500/70 focus:border-olive-500/60;
+  }
+
+  .leaflet-container { background: #0d1318 !important; }
+
+  .leaflet-popup-content-wrapper,
+  .leaflet-popup-tip {
+    background: #1c2530 !important;
+    color: #e6e9d2 !important;
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .ring-pulse   { animation: pulse-ring 1.6s infinite; }
+}

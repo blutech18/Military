@@ -189,6 +189,22 @@ echo.
 echo [7/8] Setting up Frontend (Next.js)...
 cd /d "%~dp0frontend"
 
+:: Create .env.local with defaults if it doesn't exist
+if not exist .env.local (
+    echo       Creating .env.local with defaults...
+    (
+        echo NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+        echo NEXT_PUBLIC_APP_NAME=ArmoryDB - 10RCDG Firearm Tracking
+        echo NEXT_PUBLIC_INSTITUTION=10RCDG
+        echo NEXT_PUBLIC_DEFAULT_MAP_CENTER_LAT=14.5995
+        echo NEXT_PUBLIC_DEFAULT_MAP_CENTER_LON=120.9842
+        echo NEXT_PUBLIC_GPS_POLL_SECONDS=30
+        echo NEXT_PUBLIC_BIOMETRIC_BRIDGE_URL=http://127.0.0.1:8787
+    ) > .env.local
+) else (
+    echo       .env.local already exists, skipping.
+)
+
 :: npm install is safe to re-run (uses package-lock, skips if up to date)
 echo       Installing npm dependencies...
 npm install
