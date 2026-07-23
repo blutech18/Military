@@ -15,8 +15,8 @@ backend/bootstrap/cache/*.php
 backend/.phpunit.cache/
 backend/.phpunit.result.cache
 
-# Frontend
-frontend/node_modules/
+# Frontend & Node
+node_modules/
 frontend/.next/
 frontend/out/
 frontend/.env.local
@@ -40,5 +40,7 @@ yarn-debug.log*
 # Lock files for misc tools (keep composer.lock and package-lock.json)
 *.pid
 
+kiro-skills
 manuscript
 Master_Prompt_Firearm_Tracking_System.txt
+usermanual/
