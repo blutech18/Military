@@ -195,7 +195,7 @@ cd /d "%~dp0frontend"
 if not exist .env.local (
     echo       Creating .env.local with defaults...
     (
-        echo NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+        echo NEXT_PUBLIC_API_URL=http://127.0.0.1:8000/api/v1
         echo NEXT_PUBLIC_APP_NAME=ArmoryDB - 10RCDG Firearm Tracking
         echo NEXT_PUBLIC_INSTITUTION=10RCDG
         echo NEXT_PUBLIC_DEFAULT_MAP_CENTER_LAT=14.5995

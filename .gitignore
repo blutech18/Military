@@ -44,3 +44,7 @@ kiro-skills
 manuscript
 Master_Prompt_Firearm_Tracking_System.txt
 usermanual/
+emailpass.txt
+setup.bat
+.vercel
+.env*
