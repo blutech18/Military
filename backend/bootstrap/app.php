@@ -20,6 +20,22 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // The platform load balancer (Railway/Caddy) terminates TLS and forwards
+        // over the internal network. Without trusting it, ForceHttps sees every
+        // request as insecure and $request->ip() resolves to the proxy instead of
+        // the real client, which would break both HTTPS detection and the
+        // per-IP rate limiting. Trust is scoped to private/CGNAT ranges only, so
+        // client-supplied X-Forwarded-For values cannot be spoofed past it.
+        $middleware->trustProxies(at: [
+            '100.64.0.0/10',
+            '10.0.0.0/8',
+            '172.16.0.0/12',
+            '192.168.0.0/16',
+            '127.0.0.1',
+            'fd00::/8',
+            '::1',
+        ]);
+
         // Token-based API (Sanctum bearer). statefulApi() enables CSRF; not used here.
         $middleware->alias([
             'role'                => EnsureRole::class,
