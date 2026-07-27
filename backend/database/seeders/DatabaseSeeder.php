@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
             GpsLocationSeeder::class,
             UserSeeder::class,
             FirearmSeeder::class,
+            OperationalDataSeeder::class,
         ]);
     }
 }
