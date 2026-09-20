@@ -88,6 +88,15 @@ class UserSeeder extends Seeder
 
         $created = [];
 
+        $defaultPasswords = [
+            'admin'            => env('SEED_ADMIN_PASSWORD', 'Admin@10RCDG!2025'),
+            'cmd.officer'      => env('SEED_CMD_PASSWORD', 'Command@2025!'),
+            's4.officer'       => env('SEED_S4_PASSWORD', 'S4Logistics@2025!'),
+            'armory.custodian' => env('SEED_CUSTODIAN_PASSWORD', 'Custodian@2025!'),
+            'pvt.dela.cruz'    => env('SEED_PERSONNEL_PASSWORD', 'Personnel@2025!'),
+            'cpl.santos'       => env('SEED_PERSONNEL_PASSWORD', 'Personnel@2025!'),
+        ];
+
         foreach ($users as $row) {
             $role = $roles[$row['role']];
 
@@ -103,14 +112,12 @@ class UserSeeder extends Seeder
 
             $user = User::where('username', $row['username'])->first();
 
-            if ($user) {
-                // Profile data may be corrected; the stored credential is left alone.
-                $user->fill($attributes)->save();
+            $password = $defaultPasswords[$row['username']] ?? Str::password(20);
 
+            if ($user) {
+                $user->fill($attributes)->save();
                 continue;
             }
-
-            $password = Str::password(20);
 
             User::create($attributes + [
                 'username'           => $row['username'],
