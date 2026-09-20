@@ -226,10 +226,29 @@ class AuthController extends Controller
             $mailSent = true;
         } catch (\Throwable $e) {
             $mailError = $e->getMessage();
-            Log::warning("Failed to dispatch password reset email: " . $e->getMessage(), [
+            Log::warning("Primary SMTP dispatch failed: " . $e->getMessage(), [
                 'user_id' => $user->user_id,
                 'email'   => $user->email,
             ]);
+
+            // If primary port was blocked (e.g. 587 on cloud hosts like Railway), retry via port 465 SSL
+            if (config('mail.mailers.smtp.host') === 'smtp.gmail.com' && (int) config('mail.mailers.smtp.port') !== 465) {
+                try {
+                    config([
+                        'mail.mailers.smtp.port' => 465,
+                        'mail.mailers.smtp.encryption' => 'ssl',
+                    ]);
+                    Mail::purge('smtp');
+                    Mail::to($user->email)->send(
+                        new PasswordResetCode($user, $code, $request->ip(), 15)
+                    );
+                    $mailSent = true;
+                    $mailError = null;
+                } catch (\Throwable $e2) {
+                    $mailError = $e2->getMessage();
+                    Log::warning("Fallback to port 465 SSL also failed: " . $e2->getMessage());
+                }
+            }
         }
 
         if (! $mailSent) {
