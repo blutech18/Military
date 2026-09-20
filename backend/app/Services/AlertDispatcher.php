@@ -2,11 +2,8 @@
 
 namespace App\Services;
 
-use App\Mail\AlertNotification;
 use App\Models\Notification;
 use App\Models\User;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 /**
  * Dispatches email alerts for critical and warning notifications.
@@ -29,14 +26,7 @@ class AlertDispatcher
             return;
         }
 
-        try {
-            Mail::to($user->email)->queue(new AlertNotification($notification, $user->fullName()));
-        } catch (\Throwable $e) {
-            Log::warning("AlertDispatcher: Failed to queue email for notification #{$notification->notification_id}", [
-                'error' => $e->getMessage(),
-                'user_id' => $notification->user_id,
-            ]);
-        }
+        EmailDeliveryService::sendAlert($notification, $user);
     }
 
     /**
@@ -49,13 +39,7 @@ class AlertDispatcher
             ->get();
 
         foreach ($admins as $admin) {
-            try {
-                Mail::to($admin->email)->queue(new AlertNotification($notification, $admin->fullName()));
-            } catch (\Throwable $e) {
-                Log::warning("AlertDispatcher: Failed to email admin {$admin->username}", [
-                    'error' => $e->getMessage(),
-                ]);
-            }
+            EmailDeliveryService::sendAlert($notification, $admin);
         }
     }
 }

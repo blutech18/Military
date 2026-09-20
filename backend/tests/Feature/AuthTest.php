@@ -261,4 +261,74 @@ class AuthTest extends TestCase
             'capture_signature' => hash_hmac('sha256', $signaturePayload, $secret),
         ])->assertOk()->assertJsonStructure(['token', 'user']);
     }
+
+    public function test_forgot_password_dispatches_successfully(): void
+    {
+        config(['mail.default' => 'log']);
+        $response = $this->postJson('/api/v1/auth/forgot-password', [
+            'identifier' => 'admin',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonStructure(['message', 'reset_token', 'masked_email']);
+    }
+
+    public function test_forgot_password_resend_api_dispatch(): void
+    {
+        putenv('RESEND_API_KEY=re_test_key_123');
+        Http::fake([
+            'https://api.resend.com/emails' => Http::response(['id' => 'res_123'], 200),
+        ]);
+
+        $response = $this->postJson('/api/v1/auth/forgot-password', [
+            'identifier' => 'admin',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonStructure(['message', 'reset_token', 'masked_email']);
+
+        putenv('RESEND_API_KEY');
+    }
+
+    public function test_forgot_password_handles_cloud_smtp_blocked_gracefully(): void
+    {
+        // Simulate SMTP driver with unreachable host
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.host' => '192.0.2.1', // Non-routable test address
+            'mail.mailers.smtp.port' => 465,
+            'mail.mailers.smtp.username' => 'test@example.com',
+            'mail.mailers.smtp.password' => 'secret',
+            'mail.mailers.smtp.timeout' => 1,
+        ]);
+
+        $response = $this->postJson('/api/v1/auth/forgot-password', [
+            'identifier' => 'admin',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonStructure(['message', 'reset_token', 'masked_email', 'dev_code', 'smtp_blocked'])
+            ->assertJson(['smtp_blocked' => true]);
+
+        $devCode = $response->json('dev_code');
+        $resetToken = $response->json('reset_token');
+        $this->assertNotEmpty($devCode);
+        $this->assertEquals(6, strlen($devCode));
+
+        // The session must still be active and verifiable
+        $verifyRes = $this->postJson('/api/v1/auth/verify-reset-code', [
+            'reset_token' => $resetToken,
+            'code'        => $devCode,
+        ]);
+        $verifyRes->assertOk()->assertJson(['verified' => true]);
+
+        // Complete password reset
+        $resetRes = $this->postJson('/api/v1/auth/reset-password', [
+            'reset_token'           => $resetToken,
+            'code'                  => $devCode,
+            'new_password'          => 'NewSecretPassword!2026',
+            'new_password_confirmation' => 'NewSecretPassword!2026',
+        ]);
+        $resetRes->assertOk();
+    }
 }

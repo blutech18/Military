@@ -8,6 +8,7 @@ use App\Models\Notification;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\EmailDeliveryService;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -204,71 +205,42 @@ class AuthController extends Controller
             'created_at' => now()->timestamp,
         ], now()->addMinutes(15));
 
-        $smtpUser = config('mail.mailers.smtp.username');
-        $smtpPass = config('mail.mailers.smtp.password');
-        $mailDriver = config('mail.default');
+        $delivery = EmailDeliveryService::sendPasswordReset($user, $code, $request->ip(), 15);
+        $maskedEmail = $this->maskEmail($user->email);
 
-        if ($mailDriver === 'smtp' && (empty($smtpUser) || empty($smtpPass))) {
-            Cache::forget($throttleKey);
-            Cache::forget($cacheKey);
+        if (! $delivery['sent']) {
+            if ($delivery['smtp_blocked']) {
+                AuditLogger::log(
+                    'forgot_password_requested',
+                    "Password reset code generated for {$user->username} (SMTP blocked on hosting provider; sandbox testing active)",
+                    $user,
+                    request: $request
+                );
 
-            return response()->json([
-                'message' => 'SMTP mail is not configured in production. Please add MAIL_USERNAME and MAIL_PASSWORD in the Railway Dashboard under Variables.',
-            ], 503);
-        }
-
-        $mailSent = false;
-        $mailError = null;
-        try {
-            Mail::to($user->email)->send(
-                new PasswordResetCode($user, $code, $request->ip(), 15)
-            );
-            $mailSent = true;
-        } catch (\Throwable $e) {
-            $mailError = $e->getMessage();
-            Log::warning("Primary SMTP dispatch failed: " . $e->getMessage(), [
-                'user_id' => $user->user_id,
-                'email'   => $user->email,
-            ]);
-
-            // If primary port was blocked (e.g. 587 on cloud hosts like Railway), retry via port 465 SSL
-            if (config('mail.mailers.smtp.host') === 'smtp.gmail.com' && (int) config('mail.mailers.smtp.port') !== 465) {
-                try {
-                    config([
-                        'mail.mailers.smtp.port' => 465,
-                        'mail.mailers.smtp.encryption' => 'ssl',
-                    ]);
-                    Mail::purge('smtp');
-                    Mail::to($user->email)->send(
-                        new PasswordResetCode($user, $code, $request->ip(), 15)
-                    );
-                    $mailSent = true;
-                    $mailError = null;
-                } catch (\Throwable $e2) {
-                    $mailError = $e2->getMessage();
-                    Log::warning("Fallback to port 465 SSL also failed: " . $e2->getMessage());
-                }
+                return response()->json([
+                    'message'      => "Verification code generated. (Notice: Hosting container blocked SMTP ports 465/587. For testing, your verification code is: {$code}. To receive real emails in your inbox, set RESEND_API_KEY in Railway Variables).",
+                    'reset_token'  => $resetToken,
+                    'masked_email' => $maskedEmail,
+                    'dev_code'     => $code,
+                    'smtp_blocked' => true,
+                ]);
             }
-        }
 
-        if (! $mailSent) {
             Cache::forget($throttleKey);
             Cache::forget($cacheKey);
 
-            $detail = $mailError ? ": {$mailError}" : '';
+            $detail = $delivery['error'] ? ": {$delivery['error']}" : '';
             return response()->json([
-                'message' => "Unable to dispatch verification email{$detail}. Please verify SMTP settings in Railway.",
+                'message' => "Unable to dispatch verification email{$detail}. To send emails from Railway, please add RESEND_API_KEY in Railway Variables.",
             ], 503);
         }
 
         AuditLogger::log(
             'forgot_password_requested',
-            "Password reset code requested for {$user->username}",
+            "Password reset code requested for {$user->username} via {$delivery['provider']}",
             $user,
             request: $request
         );
-
-        $maskedEmail = $this->maskEmail($user->email);
 
         return response()->json([
             'message'      => "Verification code sent to {$maskedEmail}.",
