@@ -529,28 +529,18 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setMode("forgot_request")}
-                  className="inline-flex items-center gap-1.5 text-xs text-steel-400 hover:text-olive-300 transition-colors mb-3 focus:outline-none"
+                  className="inline-flex items-center gap-1.5 text-xs text-steel-400 hover:text-olive-300 transition-colors mb-4 focus:outline-none"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
                   <span>Change Identifier</span>
                 </button>
 
-                <div className="mb-4">
+                <div className="mb-6">
                   <h2 className="text-2xl font-bold text-olive-50">Confirm Verification Code</h2>
-                  <p className="text-xs text-steel-300 mt-1">
-                    Authorization code dispatched to{" "}
+                  <p className="text-sm text-steel-400 mt-1">
+                    Enter the 6-digit authorization code dispatched to{" "}
                     <span className="font-mono text-olive-200">{maskedEmail || resetIdentifier}</span>.
                   </p>
-                </div>
-
-                {/* Operational Transmission Notice */}
-                <div className="mb-4 p-3 rounded-xl border border-olive-700/40 bg-steel-950/70 text-xs text-steel-300 flex items-start gap-3 shadow-inner">
-                  <Mail className="h-4 w-4 text-olive-400 shrink-0 mt-0.5" />
-                  <div className="leading-relaxed">
-                    An authorization code was dispatched to{" "}
-                    <span className="font-mono font-semibold text-olive-200">{maskedEmail || resetIdentifier}</span>.
-                    Check your inbox and enter the 6-digit code below to proceed.
-                  </div>
                 </div>
 
                 {/* 6-digit Code Input */}
@@ -576,10 +566,10 @@ export default function LoginPage() {
                     type="text"
                     inputMode="numeric"
                     autoComplete="one-time-code"
-                    className="input-field pl-9 font-mono tracking-widest text-base"
+                    className="input-field pl-9 font-mono tracking-widest text-base text-center"
                     value={resetCode}
                     onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    placeholder="000000"
+                    placeholder="••••••"
                   />
                 </div>
 
@@ -614,18 +604,16 @@ export default function LoginPage() {
                 exit={{ opacity: 0, x: -16 }}
                 transition={{ duration: 0.25 }}
               >
-                <div className="mb-4">
+                <div className="mb-6">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/50 border border-emerald-700/40 text-emerald-300 text-[11px] mb-3 font-medium">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>Identity Verified</span>
+                  </div>
                   <h2 className="text-2xl font-bold text-olive-50">Set New Password</h2>
-                  <p className="text-xs text-steel-300 mt-1">
-                    Authorization verified for{" "}
+                  <p className="text-sm text-steel-400 mt-1">
+                    Create a new secure password for{" "}
                     <span className="font-mono text-olive-200">{maskedEmail || resetIdentifier}</span>.
                   </p>
-                </div>
-
-                {/* Verified Confirmation Badge */}
-                <div className="mb-5 p-3 rounded-xl border border-emerald-700/40 bg-emerald-950/30 text-xs text-emerald-300 flex items-center gap-2.5 shadow-inner">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                  <span>Code verified. Please enter your new password below.</span>
                 </div>
 
                 {/* New Password Input */}
