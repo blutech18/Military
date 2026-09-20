@@ -134,18 +134,31 @@ function FirearmSelect({
 
   return (
     <div ref={dropdownRef} className={cn("relative w-full", open ? "z-30" : "z-10")}>
-      {/* Trigger Button */}
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen(!open)}
+      {/* Trigger */}
+      <div
+        role="button"
+        tabIndex={disabled ? -1 : 0}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => {
+          if (!disabled) setOpen(!open);
+        }}
+        onKeyDown={(e) => {
+          if (disabled) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen(!open);
+          } else if (e.key === "Escape") {
+            setOpen(false);
+          }
+        }}
         className={cn(
-          "w-full flex items-center justify-between gap-3 px-3.5 py-2 rounded-lg text-xs transition-all",
+          "w-full flex items-center justify-between gap-3 px-3.5 py-2 rounded-lg text-xs transition-all cursor-pointer select-none",
           "bg-steel-900/90 border text-left",
           open
             ? "border-olive-500 ring-1 ring-olive-500/40 shadow-[0_0_15px_rgba(174,183,113,0.15)]"
             : "border-olive-700/40 hover:border-olive-600/70 hover:bg-steel-850",
-          disabled && "opacity-50 cursor-not-allowed"
+          disabled && "opacity-50 cursor-not-allowed pointer-events-none"
         )}
       >
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -183,7 +196,7 @@ function FirearmSelect({
           )}
           <ChevronDown className={cn("h-4 w-4 text-steel-400 transition-transform duration-200", open && "rotate-180")} />
         </div>
-      </button>
+      </div>
 
       {/* Dropdown Menu Panel */}
       <AnimatePresence>
