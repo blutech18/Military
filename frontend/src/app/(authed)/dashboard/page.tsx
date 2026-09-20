@@ -98,25 +98,33 @@ function AdminDashboard({ data, isLoading }: { data?: DashboardSummary; isLoadin
       <MapAndCharts data={data} />
       <RecentPanels data={data} />
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <Link href="/users" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
-          <Users className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">User Management</p>
-          <p className="text-xs text-steel-400 mt-1">Create, edit, or deactivate personnel accounts.</p>
+        <Link href="/users" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">User Management</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">Create, edit, or deactivate personnel accounts.</p>
         </Link>
-        <Link href="/settings" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
-          <Shield className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">Security Settings</p>
-          <p className="text-xs text-steel-400 mt-1">TOTP, biometric, and session policies.</p>
+        <Link href="/settings" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">Security Settings</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">TOTP, biometric, and session policies.</p>
         </Link>
-        <Link href="/audit" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
-          <History className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">Full Audit Log</p>
-          <p className="text-xs text-steel-400 mt-1">Immutable trail of every system action.</p>
+        <Link href="/audit" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">Full Audit Log</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">Immutable trail of every system action.</p>
         </Link>
-        <Link href="/reports" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
-          <BarChart3 className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">Reports</p>
-          <p className="text-xs text-steel-400 mt-1">Export inventory, GPS, and security reports.</p>
+        <Link href="/reports" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">Reports</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">Export inventory, GPS, and security reports.</p>
         </Link>
       </div>
     </div>
@@ -282,20 +290,26 @@ function S4Dashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: 
 
       {/* Quick actions */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Link href="/firearms" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
-          <Shield className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">Inventory</p>
-          <p className="text-xs text-steel-400 mt-1">Manage the full firearm inventory.</p>
+        <Link href="/firearms" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">Inventory</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">Manage the full firearm inventory.</p>
         </Link>
-        <Link href="/maintenance" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
-          <Wrench className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">Maintenance</p>
-          <p className="text-xs text-steel-400 mt-1">Schedule and track maintenance cycles.</p>
+        <Link href="/maintenance" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <Wrench className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">Maintenance</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">Schedule and track maintenance cycles.</p>
         </Link>
-        <Link href="/reports" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
-          <BarChart3 className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">Reports</p>
-          <p className="text-xs text-steel-400 mt-1">Export inventory and GPS history.</p>
+        <Link href="/reports" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">Reports</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">Export inventory and GPS history.</p>
         </Link>
       </div>
     </div>
@@ -385,20 +399,26 @@ function CustodianDashboard({ data, isLoading }: { data?: DashboardSummary; isLo
 
       {/* Quick actions */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Link href="/transactions/new" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
-          <ShieldAlert className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">Issue Firearm</p>
-          <p className="text-xs text-steel-400 mt-1">Start a new issuance transaction.</p>
+        <Link href="/transactions/new" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">Issue Firearm</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">Start a new issuance transaction.</p>
         </Link>
-        <Link href="/scan" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
-          <Crosshair className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">Scan & Return</p>
-          <p className="text-xs text-steel-400 mt-1">Scan QR to process a return.</p>
+        <Link href="/scan" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <Crosshair className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">Scan & Return</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">Scan QR to process a return.</p>
         </Link>
-        <Link href="/firearms" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
-          <Shield className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">Full Inventory</p>
-          <p className="text-xs text-steel-400 mt-1">Browse all firearms and their status.</p>
+        <Link href="/firearms" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">Full Inventory</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">Browse all firearms and their status.</p>
         </Link>
       </div>
     </div>
@@ -473,20 +493,26 @@ function PersonnelDashboard({ data, isLoading, userName }: { data?: DashboardSum
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Link href="/scan" className="glass rounded-xl p-5 hover:border-olive-600/40 transition border border-transparent">
-          <Crosshair className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">Scan to Return</p>
-          <p className="text-xs text-steel-400 mt-1">Scan a firearm's QR code to complete a return.</p>
+        <Link href="/scan" className="glass rounded-xl p-5 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <Crosshair className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">Scan to Return</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">Scan a firearm's QR code to complete a return.</p>
         </Link>
-        <Link href="/firearms" className="glass rounded-xl p-5 hover:border-olive-600/40 transition border border-transparent">
-          <Shield className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">My Firearms</p>
-          <p className="text-xs text-steel-400 mt-1">View details of firearms assigned to you.</p>
+        <Link href="/firearms" className="glass rounded-xl p-5 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">My Firearms</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">View details of firearms assigned to you.</p>
         </Link>
-        <Link href="/notifications" className="glass rounded-xl p-5 hover:border-olive-600/40 transition border border-transparent">
-          <BellRing className="h-5 w-5 text-olive-300 mb-2" />
-          <p className="font-semibold text-olive-100 text-sm">Alerts</p>
-          <p className="text-xs text-steel-400 mt-1">Review notifications and overdue reminders.</p>
+        <Link href="/notifications" className="glass rounded-xl p-5 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <BellRing className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">Alerts</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">Review notifications and overdue reminders.</p>
         </Link>
       </div>
     </div>
