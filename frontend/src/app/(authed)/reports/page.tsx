@@ -133,7 +133,7 @@ function FirearmSelect({
   });
 
   return (
-    <div ref={dropdownRef} className="relative w-full">
+    <div ref={dropdownRef} className={cn("relative w-full", open ? "z-30" : "z-10")}>
       {/* Trigger Button */}
       <button
         type="button"
@@ -193,7 +193,7 @@ function FirearmSelect({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className="absolute left-0 right-0 top-full mt-1.5 z-50 glass bg-steel-900/95 border border-olive-700/60 rounded-xl shadow-2xl overflow-hidden backdrop-blur-xl"
+            className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-steel-950 border border-olive-600/70 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.85)] overflow-hidden backdrop-blur-2xl"
           >
             {/* Search Filter Header */}
             <div className="p-2.5 border-b border-olive-700/30 bg-steel-950/40">
@@ -400,7 +400,7 @@ export default function ReportsPage() {
         const isGpsXlsx = activeAction === "gps-xlsx";
 
         return (
-          <div className="glass rounded-xl p-5 space-y-4 hover:border-olive-500/40 transition-colors w-full">
+          <div className="glass rounded-xl p-5 space-y-4 hover:border-olive-500/40 transition-colors w-full relative z-20">
             <div className="space-y-1.5">
               <div className="flex items-center gap-2.5">
                 <MapPin className="h-5 w-5 text-olive-300 shrink-0" />
@@ -493,7 +493,7 @@ export default function ReportsPage() {
       })()}
 
       {/* Standard Reports Grid */}
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid md:grid-cols-2 gap-4 relative z-0">
         {REPORTS.map((r) => {
           const Icon = r.icon;
           const isViewing = activeAction === `${r.key}-view`;
