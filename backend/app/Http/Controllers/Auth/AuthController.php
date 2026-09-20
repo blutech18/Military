@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Mail\PasswordResetCode;
 use App\Models\Notification;
 use App\Models\SystemSetting;
 use App\Models\User;
@@ -16,7 +15,6 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use PragmaRX\Google2FA\Google2FA;
 
 class AuthController extends Controller
@@ -209,20 +207,20 @@ class AuthController extends Controller
         $maskedEmail = $this->maskEmail($user->email);
 
         if (! $delivery['sent']) {
-            if ($delivery['smtp_blocked']) {
+            if ($delivery['sandbox_mode']) {
                 AuditLogger::log(
                     'forgot_password_requested',
-                    "Password reset code generated for {$user->username} (SMTP blocked on hosting provider; sandbox testing active)",
+                    "Password reset code generated for {$user->username} (Resend sandbox mode)",
                     $user,
                     request: $request
                 );
 
                 return response()->json([
-                    'message'      => "Verification code generated. (Notice: Hosting container blocked SMTP ports 465/587. For testing, your verification code is: {$code}. To receive real emails in your inbox, set RESEND_API_KEY in Railway Variables).",
+                    'message'      => "Verification code generated. (Resend Sandbox Mode: your verification code is: {$code}. To deliver real emails to inboxes, add RESEND_API_KEY in Railway Variables).",
                     'reset_token'  => $resetToken,
                     'masked_email' => $maskedEmail,
                     'dev_code'     => $code,
-                    'smtp_blocked' => true,
+                    'sandbox_mode' => true,
                 ]);
             }
 
@@ -231,7 +229,7 @@ class AuthController extends Controller
 
             $detail = $delivery['error'] ? ": {$delivery['error']}" : '';
             return response()->json([
-                'message' => "Unable to dispatch verification email{$detail}. To send emails from Railway, please add RESEND_API_KEY in Railway Variables.",
+                'message' => "Unable to dispatch verification email via Resend{$detail}. Please verify your RESEND_API_KEY.",
             ], 503);
         }
 

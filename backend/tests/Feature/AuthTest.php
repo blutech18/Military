@@ -290,25 +290,17 @@ class AuthTest extends TestCase
         putenv('RESEND_API_KEY');
     }
 
-    public function test_forgot_password_handles_cloud_smtp_blocked_gracefully(): void
+    public function test_forgot_password_resend_sandbox_mode_gracefully(): void
     {
-        // Simulate SMTP driver with unreachable host
-        config([
-            'mail.default' => 'smtp',
-            'mail.mailers.smtp.host' => '192.0.2.1', // Non-routable test address
-            'mail.mailers.smtp.port' => 465,
-            'mail.mailers.smtp.username' => 'test@example.com',
-            'mail.mailers.smtp.password' => 'secret',
-            'mail.mailers.smtp.timeout' => 1,
-        ]);
+        putenv('RESEND_API_KEY');
 
         $response = $this->postJson('/api/v1/auth/forgot-password', [
             'identifier' => 'admin',
         ]);
 
         $response->assertOk()
-            ->assertJsonStructure(['message', 'reset_token', 'masked_email', 'dev_code', 'smtp_blocked'])
-            ->assertJson(['smtp_blocked' => true]);
+            ->assertJsonStructure(['message', 'reset_token', 'masked_email', 'dev_code', 'sandbox_mode'])
+            ->assertJson(['sandbox_mode' => true]);
 
         $devCode = $response->json('dev_code');
         $resetToken = $response->json('reset_token');
@@ -324,9 +316,9 @@ class AuthTest extends TestCase
 
         // Complete password reset
         $resetRes = $this->postJson('/api/v1/auth/reset-password', [
-            'reset_token'           => $resetToken,
-            'code'                  => $devCode,
-            'new_password'          => 'NewSecretPassword!2026',
+            'reset_token'               => $resetToken,
+            'code'                      => $devCode,
+            'new_password'              => 'NewSecretPassword!2026',
             'new_password_confirmation' => 'NewSecretPassword!2026',
         ]);
         $resetRes->assertOk();

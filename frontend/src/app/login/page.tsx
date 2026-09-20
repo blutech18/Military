@@ -48,7 +48,7 @@ interface ForgotPasswordResponse {
   reset_token: string;
   masked_email: string;
   dev_code?: string;
-  smtp_blocked?: boolean;
+  sandbox_mode?: boolean;
 }
 
 interface VerifyResetCodeResponse {
@@ -414,7 +414,7 @@ export default function LoginPage() {
                     className="input-field pl-9"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="username or email@gmail.com"
+                    placeholder="username or email@domain.com"
                   />
                 </div>
 
@@ -514,7 +514,7 @@ export default function LoginPage() {
                     className="input-field pl-9"
                     value={resetIdentifier}
                     onChange={(e) => setResetIdentifier(e.target.value)}
-                    placeholder="username or email@gmail.com"
+                    placeholder="username or email@domain.com"
                   />
                 </div>
 
@@ -561,18 +561,18 @@ export default function LoginPage() {
                 </div>
 
                 {cloudBlockedNotice && (
-                  <div className="mb-5 p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs">
-                    <div className="flex items-center gap-2 font-semibold text-amber-300 mb-1">
-                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
-                      <span>Railway Hosting Firewall Notice</span>
+                  <div className="mb-5 p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs">
+                    <div className="flex items-center gap-2 font-semibold text-emerald-300 mb-1">
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+                      <span>Resend Sandbox Mode Active</span>
                     </div>
                     <p className="text-steel-300 leading-relaxed">
-                      Railway blocks outbound SMTP ports (465/587). Your 6-digit testing code is{" "}
-                      <span className="font-mono font-bold text-amber-200 bg-amber-950/70 px-1.5 py-0.5 rounded border border-amber-500/30">
+                      Your 6-digit test authorization code is{" "}
+                      <span className="font-mono font-bold text-emerald-200 bg-emerald-950/70 px-1.5 py-0.5 rounded border border-emerald-500/30">
                         {cloudBlockedNotice}
                       </span>{" "}
-                      (auto-filled). To receive real emails in your inbox, set{" "}
-                      <code className="text-olive-300 font-mono">RESEND_API_KEY</code> in Railway.
+                      (auto-filled below). To deliver emails directly to user inboxes, add{" "}
+                      <code className="text-olive-300 font-mono">RESEND_API_KEY</code> in Railway Variables.
                     </p>
                   </div>
                 )}
