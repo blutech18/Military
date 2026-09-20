@@ -45,13 +45,21 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'username'        => ['required', 'string', 'max:50'],
+            'username'        => ['required', 'string', 'max:100'],
             'password'        => ['required', 'string', 'max:200'],
             'recaptcha_token' => ['nullable', 'string', 'max:4096'],
         ]);
 
         $ip = $request->ip();
-        $failKey = "login-fail:{$data['username']}:{$ip}";
+        $input = trim($data['username']);
+
+        $user = User::with('role')
+            ->whereRaw('LOWER(username) = ?', [strtolower($input)])
+            ->orWhereRaw('LOWER(email) = ?', [strtolower($input)])
+            ->first();
+
+        $accountKey = $user ? $user->username : $input;
+        $failKey = "login-fail:{$accountKey}:{$ip}";
         $fails = (int) Cache::get($failKey, 0);
         $threshold = (int) config('armory.failed_login_threshold', 3);
 
@@ -60,7 +68,7 @@ class AuthController extends Controller
             if ($recaptchaToken === '' || ! $this->verifyRecaptcha($recaptchaToken, $ip)) {
                 AuditLogger::log(
                     'recaptcha_failed',
-                    "reCAPTCHA verification failed for {$data['username']}",
+                    "reCAPTCHA verification failed for {$accountKey}",
                     request: $request,
                 );
 
@@ -71,8 +79,6 @@ class AuthController extends Controller
                 ], 429);
             }
         }
-
-        $user = User::with('role')->where('username', $data['username'])->first();
 
         if (! $user || ! Hash::check($data['password'], $user->password)) {
             Cache::put($failKey, $fails + 1, now()->addMinutes(15));
@@ -97,9 +103,9 @@ class AuthController extends Controller
                     AuditLogger::log('account_locked', "Account {$user->username} locked after {$lockoutAttempts} failures", $user, request: $request);
                 }
 
-                AuditLogger::log('failed_login', "Failed password for {$data['username']}", $user, request: $request);
+                AuditLogger::log('failed_login', "Failed password for {$accountKey}", $user, request: $request);
             } else {
-                AuditLogger::log('failed_login', "Unknown username {$data['username']}", request: $request);
+                AuditLogger::log('failed_login', "Unknown username or email {$input}", request: $request);
             }
 
             return response()->json(['message' => 'Invalid credentials.'], 401);
@@ -143,6 +149,7 @@ class AuthController extends Controller
             'message'             => 'Password verified — proceed to MFA.',
             'challenge_token'     => $challenge,
             'next'                => $next,
+            'username'            => $user->username,
             'totp_enabled'        => (bool) $user->totp_enabled,
             'biometric_enrolled'  => (bool) $user->biometric_enrolled,
         ]);
@@ -159,8 +166,8 @@ class AuthController extends Controller
 
         $identifier = trim($data['identifier']);
 
-        $user = User::where('username', $identifier)
-            ->orWhere('email', $identifier)
+        $user = User::whereRaw('LOWER(username) = ?', [strtolower($identifier)])
+            ->orWhereRaw('LOWER(email) = ?', [strtolower($identifier)])
             ->first();
 
         if (! $user) {
@@ -214,13 +221,11 @@ class AuthController extends Controller
         );
 
         $maskedEmail = $this->maskEmail($user->email);
-        $isLocalOrDemo = app()->environment(['local', 'testing']) || (bool) config('armory.demo_mode');
 
         return response()->json([
             'message'      => "Verification code sent to {$maskedEmail}.",
             'reset_token'  => $resetToken,
             'masked_email' => $maskedEmail,
-            'dev_code'     => $isLocalOrDemo ? $code : null,
         ]);
     }
 

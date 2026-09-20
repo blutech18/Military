@@ -14,9 +14,6 @@ import {
   KeyRound,
   ArrowLeft,
   Mail,
-  CheckCircle2,
-  RefreshCw,
-  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -30,6 +27,7 @@ interface LoginResponse {
   next?: "totp" | "totp_setup" | "biometric" | "biometric_enroll";
   totp_enabled?: boolean;
   biometric_enrolled?: boolean;
+  username?: string;
   // Present when both MFA methods are disabled (direct login)
   token?: string;
   token_type?: string;
@@ -48,7 +46,6 @@ interface ForgotPasswordResponse {
   message: string;
   reset_token: string;
   masked_email: string;
-  dev_code?: string | null;
 }
 
 interface ResetPasswordResponse {
@@ -123,7 +120,6 @@ export default function LoginPage() {
   const [resetToken, setResetToken] = useState("");
   const [resetCode, setResetCode] = useState("");
   const [maskedEmail, setMaskedEmail] = useState("");
-  const [devCode, setDevCode] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -179,7 +175,7 @@ export default function LoginPage() {
 
       // MFA required — store challenge and route to the correct step
       sessionStorage.setItem("armory_challenge", data.challenge_token!);
-      sessionStorage.setItem("armory_username", username);
+      sessionStorage.setItem("armory_username", data.username ?? (data.user?.username || username));
       sessionStorage.setItem("armory_next_step", data.next ?? "totp_setup");
       sessionStorage.setItem("armory_totp_enabled", data.totp_enabled ? "1" : "0");
       sessionStorage.setItem("armory_biometric_enrolled", data.biometric_enrolled ? "1" : "0");
@@ -221,10 +217,6 @@ export default function LoginPage() {
       });
       setResetToken(data.reset_token);
       setMaskedEmail(data.masked_email);
-      setDevCode(data.dev_code ?? null);
-      if (data.dev_code) {
-        setResetCode(data.dev_code);
-      }
       setResendCooldown(60);
       setMode("forgot_reset");
       toast.success(data.message || "Verification code dispatched.");
@@ -249,10 +241,6 @@ export default function LoginPage() {
       });
       setResetToken(data.reset_token);
       setMaskedEmail(data.masked_email);
-      setDevCode(data.dev_code ?? null);
-      if (data.dev_code) {
-        setResetCode(data.dev_code);
-      }
       setResendCooldown(60);
       toast.success("A new verification code has been dispatched.");
     } catch (error: unknown) {
@@ -306,7 +294,6 @@ export default function LoginPage() {
       setResetCode("");
       setNewPassword("");
       setConfirmPassword("");
-      setDevCode(null);
       setMode("login");
     } catch (error: unknown) {
       if (error instanceof AxiosError) {
@@ -366,9 +353,9 @@ export default function LoginPage() {
                   <p className="text-sm text-steel-400">Enter your credentials to begin.</p>
                 </div>
 
-                {/* Username Input */}
+                {/* Username or Email Input */}
                 <label className="block text-xs uppercase tracking-widest text-olive-300 mb-1">
-                  Username
+                  Username or Email
                 </label>
                 <div className="relative mb-4">
                   <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
@@ -379,7 +366,7 @@ export default function LoginPage() {
                     className="input-field pl-9"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="e.g. armory.custodian"
+                    placeholder="e.g. armory.custodian or operator@gmail.com"
                   />
                 </div>
 
@@ -525,24 +512,15 @@ export default function LoginPage() {
                   </p>
                 </div>
 
-                {/* Dev/Demo Environment Helper */}
-                {devCode && (
-                  <div className="mb-4 p-2.5 rounded-lg border border-olive-500/40 bg-olive-950/50 text-xs text-olive-200 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-olive-400 shrink-0" />
-                      <span>
-                        Demo code: <strong className="font-mono tracking-widest text-olive-100">{devCode}</strong>
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setResetCode(devCode)}
-                      className="text-[11px] font-semibold text-olive-300 hover:text-olive-100 underline ml-2"
-                    >
-                      Auto-fill
-                    </button>
+                {/* Operational Transmission Notice */}
+                <div className="mb-4 p-3 rounded-xl border border-olive-700/40 bg-steel-950/70 text-xs text-steel-300 flex items-start gap-3 shadow-inner">
+                  <Mail className="h-4 w-4 text-olive-400 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    An authorization code was dispatched to{" "}
+                    <span className="font-mono font-semibold text-olive-200">{maskedEmail || resetIdentifier}</span>.
+                    Check your email inbox and enter the 6-digit code below.
                   </div>
-                )}
+                </div>
 
                 {/* 6-digit Code Input */}
                 <div className="flex items-center justify-between mb-1">
