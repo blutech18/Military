@@ -216,7 +216,7 @@ class AuthController extends Controller
                 );
 
                 return response()->json([
-                    'message'      => "Verification code generated. (Resend Sandbox Mode: your verification code is: {$code}. To deliver real emails to inboxes, add RESEND_API_KEY in Railway Variables).",
+                    'message'      => "Verification code generated for local development: {$code}.",
                     'reset_token'  => $resetToken,
                     'masked_email' => $maskedEmail,
                     'dev_code'     => $code,
@@ -229,19 +229,19 @@ class AuthController extends Controller
 
             $detail = $delivery['error'] ? ": {$delivery['error']}" : '';
             return response()->json([
-                'message' => "Unable to dispatch verification email via Resend{$detail}. Please verify your RESEND_API_KEY.",
+                'message' => "Unable to dispatch verification email{$detail}. Please verify your RESEND_API_KEY in Railway.",
             ], 503);
         }
 
         AuditLogger::log(
             'forgot_password_requested',
-            "Password reset code requested for {$user->username} via {$delivery['provider']}",
+            "Password reset code requested for {$user->username} via Resend",
             $user,
             request: $request
         );
 
         return response()->json([
-            'message'      => "Verification code sent to {$maskedEmail}.",
+            'message'      => "A 6-digit verification code has been dispatched to {$maskedEmail}.",
             'reset_token'  => $resetToken,
             'masked_email' => $maskedEmail,
         ]);

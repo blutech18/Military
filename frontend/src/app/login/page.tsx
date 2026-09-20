@@ -47,8 +47,6 @@ interface ForgotPasswordResponse {
   message: string;
   reset_token: string;
   masked_email: string;
-  dev_code?: string;
-  sandbox_mode?: boolean;
 }
 
 interface VerifyResetCodeResponse {
@@ -135,7 +133,6 @@ export default function LoginPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
-  const [cloudBlockedNotice, setCloudBlockedNotice] = useState<string | null>(null);
 
   // Countdown timer for resending reset code
   useEffect(() => {
@@ -228,17 +225,9 @@ export default function LoginPage() {
       setResetToken(data.reset_token);
       setMaskedEmail(data.masked_email);
       setResendCooldown(60);
-      if (data.dev_code) {
-        setResetCode(data.dev_code);
-        setCloudBlockedNotice(data.dev_code);
-      } else {
-        setResetCode("");
-        setCloudBlockedNotice(null);
-      }
+      setResetCode("");
       setMode("forgot_verify");
-      toast.success(data.message || "Verification code dispatched.", {
-        duration: data.dev_code ? 8000 : 4000,
-      });
+      toast.success(data.message || "Verification code dispatched.");
     } catch (error: unknown) {
       if (error instanceof AxiosError) {
         toast.error(error.response?.data?.message ?? "Unable to request password reset.");
@@ -261,13 +250,7 @@ export default function LoginPage() {
       setResetToken(data.reset_token);
       setMaskedEmail(data.masked_email);
       setResendCooldown(60);
-      if (data.dev_code) {
-        setResetCode(data.dev_code);
-        setCloudBlockedNotice(data.dev_code);
-      }
-      toast.success(data.message || "A new verification code has been dispatched.", {
-        duration: data.dev_code ? 8000 : 4000,
-      });
+      toast.success(data.message || "A new verification code has been dispatched.");
     } catch (error: unknown) {
       if (error instanceof AxiosError) {
         toast.error(error.response?.data?.message ?? "Failed to resend code.");
@@ -560,22 +543,6 @@ export default function LoginPage() {
                   </p>
                 </div>
 
-                {cloudBlockedNotice && (
-                  <div className="mb-5 p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs">
-                    <div className="flex items-center gap-2 font-semibold text-emerald-300 mb-1">
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-                      <span>Resend Sandbox Mode Active</span>
-                    </div>
-                    <p className="text-steel-300 leading-relaxed">
-                      Your 6-digit test authorization code is{" "}
-                      <span className="font-mono font-bold text-emerald-200 bg-emerald-950/70 px-1.5 py-0.5 rounded border border-emerald-500/30">
-                        {cloudBlockedNotice}
-                      </span>{" "}
-                      (auto-filled below). To deliver emails directly to user inboxes, add{" "}
-                      <code className="text-olive-300 font-mono">RESEND_API_KEY</code> in Railway Variables.
-                    </p>
-                  </div>
-                )}
 
                 {/* 6-digit Code Input */}
                 <div className="flex items-center justify-between mb-1">

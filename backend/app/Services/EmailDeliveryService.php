@@ -10,11 +10,25 @@ use Illuminate\Support\Facades\Log;
 class EmailDeliveryService
 {
     /**
+     * Get the active Resend API key from config or environment.
+     */
+    public static function getApiKey(): ?string
+    {
+        return config('services.resend.key')
+            ?: env('RESEND_API_KEY')
+            ?: getenv('RESEND_API_KEY')
+            ?: ($_ENV['RESEND_API_KEY'] ?? ($_SERVER['RESEND_API_KEY'] ?? null));
+    }
+
+    /**
      * Dispatch a 6-digit password reset verification email using Resend API (HTTPS port 443).
      *
-     * If RESEND_API_KEY is configured, this delivers the email directly via Resend's REST API.
-     * If RESEND_API_KEY is not configured (e.g. initial deployment or local development),
-     * this returns sandbox_mode = true with the generated code so testing is never blocked.
+     * In production (APP_ENV=production):
+     * - Dispatches exclusively via Resend API.
+     * - Never exposes the verification code in the response payload.
+     *
+     * In local development (APP_ENV!=production):
+     * - If RESEND_API_KEY is omitted, enables sandbox mode for offline testing.
      *
      * @return array{sent: bool, provider: string, sandbox_mode: bool, error: ?string, code: ?string}
      */
@@ -28,12 +42,12 @@ class EmailDeliveryService
             'expiresMinutes' => $expiresMinutes,
         ])->render();
 
-        $resendKey = env('RESEND_API_KEY');
+        $resendKey = self::getApiKey();
+        $isProduction = app()->environment('production');
 
         // 1. Dispatch via Resend API if API key is provided
         if (!empty($resendKey)) {
             $from = self::resolveFromAddress();
-
             $response = self::sendViaResend($resendKey, $from, $user->email, $subject, $html);
 
             if ($response['success']) {
@@ -49,7 +63,18 @@ class EmailDeliveryService
 
             Log::error("Resend API dispatch failed for {$user->email}: " . ($response['error'] ?? 'unknown error'));
 
-            // Fallback to sandbox test mode if API call failed
+            // In production, never expose verification code on failure
+            if ($isProduction) {
+                return [
+                    'sent'         => false,
+                    'provider'     => 'resend_failed',
+                    'sandbox_mode' => false,
+                    'error'        => $response['error'],
+                    'code'         => null,
+                ];
+            }
+
+            // Local development only fallback
             return [
                 'sent'         => false,
                 'provider'     => 'resend_failed',
@@ -59,14 +84,25 @@ class EmailDeliveryService
             ];
         }
 
-        // 2. Sandbox / Testing mode when RESEND_API_KEY is not configured
-        Log::info("Password reset code generated in Resend sandbox mode for {$user->username}: {$code}");
+        // In production, missing RESEND_API_KEY is an unrecoverable configuration error
+        if ($isProduction) {
+            Log::error("Email delivery failed: RESEND_API_KEY is not configured in production environment.");
+            return [
+                'sent'         => false,
+                'provider'     => 'unconfigured',
+                'sandbox_mode' => false,
+                'error'        => 'Email service is not configured. Please contact the administrator.',
+                'code'         => null,
+            ];
+        }
 
+        // Local development sandbox mode
+        Log::info("Password reset code generated in local sandbox mode for {$user->username}: {$code}");
         return [
             'sent'         => false,
-            'provider'     => 'sandbox',
+            'provider'     => 'local_sandbox',
             'sandbox_mode' => true,
-            'error'        => 'RESEND_API_KEY is not configured in environment variables.',
+            'error'        => 'RESEND_API_KEY is not configured.',
             'code'         => $code,
         ];
     }
@@ -76,7 +112,7 @@ class EmailDeliveryService
      */
     public static function sendAlert(Notification $notification, User $recipient): bool
     {
-        $resendKey = env('RESEND_API_KEY');
+        $resendKey = self::getApiKey();
         if (empty($resendKey)) {
             Log::info("Alert notification #{$notification->notification_id} skipped email dispatch (RESEND_API_KEY not configured)");
             return false;
@@ -143,7 +179,7 @@ class EmailDeliveryService
      */
     public static function resolveFromAddress(): string
     {
-        $explicit = env('RESEND_FROM_ADDRESS');
+        $explicit = config('services.resend.from') ?: env('RESEND_FROM_ADDRESS');
         if (!empty($explicit) && !str_contains($explicit, '@gmail.com') && !str_contains($explicit, '@yahoo.com')) {
             return $explicit;
         }
