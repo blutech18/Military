@@ -258,7 +258,7 @@ function RegisterFirearmModal({ onClose, onSuccess }: { onClose: () => void; onS
                       onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
           </div>
 
-          <div className="flex gap-2 justify-end pt-2 border-t border-steel-800">
+          <div className="flex gap-2 justify-end pt-3">
             <button type="button" onClick={onClose} className="btn-secondary text-xs">Cancel</button>
             <button disabled={loading} className="btn-primary text-xs">
               {loading && <Loader2 className="h-4 w-4 animate-spin" />} Register Firearm

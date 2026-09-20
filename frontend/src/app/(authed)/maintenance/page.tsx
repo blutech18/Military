@@ -171,7 +171,7 @@ export default function MaintenancePage() {
                           onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
               </div>
 
-              <div className="flex gap-2 justify-end pt-2 border-t border-steel-800">
+              <div className="flex gap-2 justify-end pt-3">
                 <button type="button" onClick={() => setShowForm(false)} className="btn-secondary text-xs">Cancel</button>
                 <button disabled={create.isPending} className="btn-primary text-xs">
                   {create.isPending && <Loader2 className="h-4 w-4 animate-spin" />} Save Record

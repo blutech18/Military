@@ -193,7 +193,7 @@ export default function GeofencesPage() {
                 </div>
               </div>
 
-              <div className="flex gap-2 justify-end pt-2 border-t border-steel-800">
+              <div className="flex gap-2 justify-end pt-3">
                 <button type="button" onClick={resetForm} className="btn-secondary text-xs">Cancel</button>
                 <button disabled={save.isPending} className="btn-primary text-xs">
                   {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}

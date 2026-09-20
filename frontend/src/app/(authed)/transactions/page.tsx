@@ -561,7 +561,7 @@ function IssuanceModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
             />
           </div>
 
-          <div className="flex flex-col-reverse gap-2 border-t border-steel-800 pt-3 sm:flex-row sm:justify-end">
+          <div className="flex flex-col-reverse gap-2 pt-3 sm:flex-row sm:justify-end">
             <button type="button" onClick={onClose} disabled={loading} className="btn-secondary text-xs">Cancel</button>
             <button
               disabled={loading || personnelQuery.isError || firearmsQuery.isError}

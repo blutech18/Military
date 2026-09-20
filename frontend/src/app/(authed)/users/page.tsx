@@ -105,7 +105,7 @@ export default function UsersPage() {
                 <div className="grid md:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-steel-400 mb-1 block">Username</label>
-                    <input className="input-field w-full" required placeholder="e.g. pvt.dela.cruz" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
+                    <input className="input-field w-full" required placeholder="pvt.dela.cruz" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} />
                   </div>
                   <div>
                     <label className="text-xs text-steel-400 mb-1 block">Email</label>
@@ -121,7 +121,7 @@ export default function UsersPage() {
               {/* Personal Information */}
               <div>
                 <p className="text-[10px] uppercase tracking-widest text-olive-300 mb-2">Personal Information</p>
-                <div className="grid md:grid-cols-3 gap-3">
+                <div className="grid md:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-steel-400 mb-1 block">First Name</label>
                     <input className="input-field w-full" required placeholder="Juan" value={form.first_name} onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
@@ -132,11 +132,11 @@ export default function UsersPage() {
                   </div>
                   <div>
                     <label className="text-xs text-steel-400 mb-1 block">Rank</label>
-                    <input className="input-field w-full" required placeholder="e.g. SSG, CPL, PVT" value={form.rank} onChange={(e) => setForm({ ...form, rank: e.target.value })} />
+                    <input className="input-field w-full" required placeholder="SSG, CPL, PVT" value={form.rank} onChange={(e) => setForm({ ...form, rank: e.target.value })} />
                   </div>
                   <div>
                     <label className="text-xs text-steel-400 mb-1 block">Phone</label>
-                    <input className="input-field w-full" placeholder="09XXXXXXXXX" maxLength={11} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                    <input className="input-field w-full" placeholder="09171234567" maxLength={11} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
                   </div>
                 </div>
               </div>
@@ -171,7 +171,7 @@ export default function UsersPage() {
                 </div>
               </div>
 
-              <div className="flex gap-2 justify-end pt-2 border-t border-steel-800">
+              <div className="flex gap-2 justify-end pt-3">
                 <button type="button" onClick={resetForm} className="btn-secondary text-xs">Cancel</button>
                 <button disabled={save.isPending} className="btn-primary text-xs">
                   {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />} {editing ? "Update User" : "Create User"}
