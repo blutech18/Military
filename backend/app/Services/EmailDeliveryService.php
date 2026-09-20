@@ -32,10 +32,7 @@ class EmailDeliveryService
 
         // 1. Dispatch via Resend API if API key is provided
         if (!empty($resendKey)) {
-            $from = env('RESEND_FROM_ADDRESS')
-                ?: (config('mail.from.address') && !str_contains(config('mail.from.address'), 'example.com')
-                    ? config('mail.from.name', 'ArmoryDB') . ' <' . config('mail.from.address') . '>'
-                    : 'ArmoryDB <onboarding@resend.dev>');
+            $from = self::resolveFromAddress();
 
             $response = self::sendViaResend($resendKey, $from, $user->email, $subject, $html);
 
@@ -96,10 +93,7 @@ class EmailDeliveryService
             'recipientName' => $recipient->fullName(),
         ])->render();
 
-        $from = env('RESEND_FROM_ADDRESS')
-            ?: (config('mail.from.address') && !str_contains(config('mail.from.address'), 'example.com')
-                ? config('mail.from.name', 'ArmoryDB') . ' <' . config('mail.from.address') . '>'
-                : 'ArmoryDB <onboarding@resend.dev>');
+        $from = self::resolveFromAddress();
 
         $res = self::sendViaResend($resendKey, $from, $recipient->email, $subject, $html);
 
@@ -140,5 +134,27 @@ class EmailDeliveryService
         } catch (\Throwable $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }
+    }
+
+    /**
+     * Resolve valid Resend sender address.
+     * Resend strictly requires onboarding@resend.dev unless a custom verified domain is used.
+     * Free webmail domains (gmail.com, yahoo.com) cannot be used as the sender on Resend.
+     */
+    public static function resolveFromAddress(): string
+    {
+        $explicit = env('RESEND_FROM_ADDRESS');
+        if (!empty($explicit) && !str_contains($explicit, '@gmail.com') && !str_contains($explicit, '@yahoo.com')) {
+            return $explicit;
+        }
+
+        $addr = config('mail.from.address');
+        $name = config('mail.from.name', 'ArmoryDB');
+
+        if (empty($addr) || str_contains($addr, 'gmail.com') || str_contains($addr, 'yahoo.com') || str_contains($addr, 'example.com')) {
+            return "{$name} <onboarding@resend.dev>";
+        }
+
+        return "{$name} <{$addr}>";
     }
 }
