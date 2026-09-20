@@ -3,6 +3,9 @@
 import { MapContainer, TileLayer, Circle, Marker, useMapEvents, useMap, ZoomControl } from "react-leaflet";
 import { useEffect } from "react";
 import L from "leaflet";
+import { useMapMountKey } from "./use-map-mount-key";
+import { MapResizeObserver } from "./map-resize-observer";
+import { TILE_ATTRIBUTION, TILE_DARKEN_CLASS, TILE_MAX_ZOOM, TILE_URL } from "./tiles";
 
 // Fix default Leaflet icon paths
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -39,6 +42,7 @@ function RecenterMap({ lat, lng }: { lat: number; lng: number }) {
 }
 
 export function GeofencePicker({ latitude, longitude, radius, onChange }: GeofencePickerProps) {
+  const mapKey = useMapMountKey();
   const defaultLat = Number(process.env.NEXT_PUBLIC_DEFAULT_MAP_CENTER_LAT ?? 8.484460);
   const defaultLon = Number(process.env.NEXT_PUBLIC_DEFAULT_MAP_CENTER_LON ?? 124.657010);
 
@@ -47,19 +51,26 @@ export function GeofencePicker({ latitude, longitude, radius, onChange }: Geofen
     longitude || defaultLon,
   ];
 
+  if (!mapKey) {
+    return (
+      <div className="flex h-[200px] w-full items-center justify-center rounded-md border border-steel-700/40 text-xs text-steel-400">
+        Initialising map…
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-md overflow-hidden border border-steel-700/40">
       <MapContainer
+        key={mapKey}
         center={center}
         zoom={15}
         zoomControl={false}
-        className="h-[200px] w-full"
+        className={`h-[200px] w-full ${TILE_DARKEN_CLASS}`}
         scrollWheelZoom
       >
-        <TileLayer
-          attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        />
+        <MapResizeObserver />
+        <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} maxZoom={TILE_MAX_ZOOM} />
         <ZoomControl position="topright" />
         <ClickHandler onChange={onChange} />
         <RecenterMap lat={latitude} lng={longitude} />

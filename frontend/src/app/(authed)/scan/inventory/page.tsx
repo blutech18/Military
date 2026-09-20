@@ -35,34 +35,37 @@ export default function InventoryValidationPage() {
         setScanning(true);
         await scanner.start(
           { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1 },
+          { fps: 10 },
           async (decoded: string) => {
             // Avoid duplicate scans
             try {
               const payload = JSON.parse(decoded);
               const serial = payload.serial_number || payload.qr_code;
-              if (scannedItems.some(i => i.serial_number === serial) || notFound.includes(decoded)) return;
+              if (scannedItems.some((i) => i.serial_number === serial) || notFound.includes(decoded)) return;
             } catch {
               if (notFound.includes(decoded)) return;
             }
 
             try {
               const { data } = await api.post("/firearms/lookup", { qr_payload: decoded });
-              setScannedItems(prev => {
-                if (prev.some(i => i.equipment_id === data.equipment_id)) return prev;
-                return [...prev, {
-                  equipment_id: data.equipment_id,
-                  serial_number: data.serial_number,
-                  model: data.model,
-                  condition_status: data.condition_status,
-                  availability_status: data.availability_status,
-                  found: true,
-                  scanned_at: new Date().toISOString(),
-                }];
+              setScannedItems((prev) => {
+                if (prev.some((i) => i.equipment_id === data.equipment_id)) return prev;
+                return [
+                  ...prev,
+                  {
+                    equipment_id: data.equipment_id,
+                    serial_number: data.serial_number,
+                    model: data.model,
+                    condition_status: data.condition_status,
+                    availability_status: data.availability_status,
+                    found: true,
+                    scanned_at: new Date().toISOString(),
+                  },
+                ];
               });
               toast.success(`✓ ${data.serial_number}`);
             } catch {
-              setNotFound(prev => prev.includes(decoded) ? prev : [...prev, decoded]);
+              setNotFound((prev) => (prev.includes(decoded) ? prev : [...prev, decoded]));
               toast.error("Firearm not found in database.");
             }
           },
@@ -76,7 +79,10 @@ export default function InventoryValidationPage() {
 
     return () => {
       cancelled = true;
-      try { scanner?.stop(); scanner?.clear(); } catch {}
+      try {
+        scanner?.stop();
+        scanner?.clear();
+      } catch {}
       setScanning(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -90,7 +96,7 @@ export default function InventoryValidationPage() {
   return (
     <div className="space-y-5">
       <div>
-          <h1 className="text-2xl font-bold text-olive-50 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-olive-50 flex items-center gap-2">
           <ClipboardCheck className="h-5 w-5 text-olive-300" /> Batch QR Scan
         </h1>
         <p className="text-sm text-steel-400">
@@ -103,17 +109,23 @@ export default function InventoryValidationPage() {
         <div className="glass rounded-xl p-4">
           <p className="section-title mb-3 flex items-center gap-2">
             <Camera className="h-4 w-4" /> Scanner
-            {scanning && <span className="pill pill-tactical ml-auto"><ScanLine className="h-3 w-3" /> Active</span>}
+            {scanning && (
+              <span className="pill pill-tactical ml-auto">
+                <ScanLine className="h-3 w-3" /> Active
+              </span>
+            )}
           </p>
           <div className="relative aspect-square w-full max-w-sm mx-auto overflow-hidden rounded-md bg-black border border-olive-700/40">
             <div id="inventory-qr-reader" ref={containerRef} className="absolute inset-0" />
-            <div className="pointer-events-none absolute inset-x-8 top-1/4 bottom-1/4 border-2 border-olive-400/70 rounded-md">
+            <div className="pointer-events-none absolute inset-x-8 top-1/4 bottom-1/4 border border-olive-400/70 rounded-md overflow-hidden">
               <div className="absolute left-0 right-0 h-0.5 bg-olive-300/80 animate-scan-line shadow-[0_0_8px_2px_rgba(174,183,113,0.7)]" />
             </div>
           </div>
           <div className="mt-3 flex justify-between items-center">
             <p className="text-[11px] text-steel-500">Scan continuously — duplicates are ignored.</p>
-            <button onClick={reset} className="btn-ghost text-xs"><RotateCcw className="h-3.5 w-3.5" /> Reset</button>
+            <button onClick={reset} className="btn-ghost text-xs">
+              <RotateCcw className="h-3.5 w-3.5" /> Reset
+            </button>
           </div>
         </div>
 
@@ -181,7 +193,10 @@ export default function InventoryValidationPage() {
                 </div>
                 <div>
                   <p className="text-lg font-bold text-olive-200">
-                    {scannedItems.length > 0 ? Math.round((scannedItems.length / (scannedItems.length + notFound.length)) * 100) : 0}%
+                    {scannedItems.length > 0
+                      ? Math.round((scannedItems.length / (scannedItems.length + notFound.length)) * 100)
+                      : 0}
+                    %
                   </p>
                   <p className="text-[10px] uppercase tracking-widest text-steel-400">Match Rate</p>
                 </div>

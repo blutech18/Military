@@ -1,10 +1,14 @@
 <?php
 
 return [
+    'demo_mode' => (bool) env('ARMORY_DEMO_MODE', false),
+
     'gps' => [
-        'interval_seconds'      => (int) env('ARMORY_GPS_INTERVAL_SECONDS', 30),
-        'latency_budget_seconds'=> (int) env('ARMORY_GPS_LATENCY_BUDGET_SECONDS', 5),
-        'accuracy_meters'       => (int) env('ARMORY_GPS_ACCURACY_METERS', 10),
+        'interval_seconds'        => (int) env('ARMORY_GPS_INTERVAL_SECONDS', 30),
+        'latency_budget_seconds'  => (int) env('ARMORY_GPS_LATENCY_BUDGET_SECONDS', 5),
+        'accuracy_meters'         => (int) env('ARMORY_GPS_ACCURACY_METERS', 10),
+        'max_age_seconds'         => (int) env('ARMORY_GPS_MAX_AGE_SECONDS', 300),
+        'future_tolerance_seconds'=> (int) env('ARMORY_GPS_FUTURE_TOLERANCE_SECONDS', 30),
     ],
 
     'session' => [
@@ -22,9 +26,17 @@ return [
     ],
 
     'recaptcha' => [
-        'site_key'  => env('RECAPTCHA_SITE_KEY', ''),
-        'secret'    => env('RECAPTCHA_SECRET_KEY', ''),
-        'min_score' => (float) env('RECAPTCHA_MIN_SCORE', 0.5),
+        'site_key'         => env('RECAPTCHA_SITE_KEY', ''),
+        'secret'           => env('RECAPTCHA_SECRET_KEY', ''),
+        'min_score'        => (float) env('RECAPTCHA_MIN_SCORE', 0.5),
+        'verify_url'       => env('RECAPTCHA_VERIFY_URL', 'https://www.google.com/recaptcha/api/siteverify'),
+        'expected_action'  => env('RECAPTCHA_EXPECTED_ACTION', 'login'),
+        'expected_hostname'=> env('RECAPTCHA_EXPECTED_HOSTNAME', ''),
+    ],
+
+    'biometric' => [
+        'bridge_hmac_secret' => env('BIOMETRIC_BRIDGE_HMAC_SECRET', ''),
+        'attestation_max_age_seconds' => (int) env('BIOMETRIC_ATTESTATION_MAX_AGE_SECONDS', 60),
     ],
 
     'totp' => [

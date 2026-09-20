@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Wrench, Loader2, Calendar, AlertTriangle, CheckCircle, X } from "lucide-react";
+import { Plus, Wrench, Loader2, Calendar, AlertTriangle, CheckCircle, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { fmtDate, CONDITIONS } from "@/lib/utils";
@@ -13,10 +13,11 @@ export default function MaintenancePage() {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [tab, setTab] = useState<"history" | "schedule">("history");
+  const [page, setPage] = useState(1);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["maintenance"],
-    queryFn: async () => (await api.get("/maintenance", { params: { per_page: 100 } })).data,
+    queryKey: ["maintenance", page],
+    queryFn: async () => (await api.get("/maintenance", { params: { page, per_page: 15 } })).data,
   });
 
   const { data: firearms } = useQuery({
@@ -120,51 +121,50 @@ export default function MaintenancePage() {
                 </div>
               </div>
 
-              {/* Schedule & Condition */}
+              {/* Dates & Condition */}
               <div>
-                <p className="text-[10px] uppercase tracking-widest text-olive-300 mb-1.5">Schedule & Condition</p>
-                <div className="grid md:grid-cols-4 gap-3">
+                <p className="text-[10px] uppercase tracking-widest text-olive-300 mb-1.5">Date & Assessment</p>
+                <div className="grid md:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-steel-400 mb-1 block">Date <span className="text-red-400">*</span></label>
-                    <input className="input-field w-full h-[42px]" type="date" required value={form.maintenance_date}
+                    <label className="text-xs text-steel-400 mb-1 block">Maintenance Date <span className="text-red-400">*</span></label>
+                    <input type="date" className="input-field w-full" value={form.maintenance_date}
                            onChange={(e) => setForm({ ...form, maintenance_date: e.target.value })} />
                   </div>
                   <div>
                     <label className="text-xs text-steel-400 mb-1 block">Next Schedule</label>
-                    <input className="input-field w-full h-[42px]" type="date" value={form.next_schedule}
+                    <input type="date" className="input-field w-full" value={form.next_schedule}
                            onChange={(e) => setForm({ ...form, next_schedule: e.target.value })} />
                   </div>
                   <div>
-                    <label className="text-xs text-steel-400 mb-1 block">Before %</label>
-                    <input className="input-field w-full h-[42px]" type="number" min={0} max={100} value={form.condition_before}
+                    <label className="text-xs text-steel-400 mb-1 block">Condition Before ({form.condition_before}%)</label>
+                    <input type="range" min={0} max={100} className="w-full accent-olive-400" value={form.condition_before}
                            onChange={(e) => setForm({ ...form, condition_before: Number(e.target.value) })} />
                   </div>
                   <div>
-                    <label className="text-xs text-steel-400 mb-1 block">After %</label>
-                    <input className="input-field w-full h-[42px]" type="number" min={0} max={100} value={form.condition_after}
+                    <label className="text-xs text-steel-400 mb-1 block">Condition After ({form.condition_after}%)</label>
+                    <input type="range" min={0} max={100} className="w-full accent-olive-400" value={form.condition_after}
                            onChange={(e) => setForm({ ...form, condition_after: Number(e.target.value) })} />
                   </div>
                 </div>
               </div>
 
-              {/* Description & Cost */}
+              {/* Cost & Description */}
               <div>
-                <p className="text-[10px] uppercase tracking-widest text-olive-300 mb-1.5">Description & Cost</p>
-                <div className="grid md:grid-cols-[3fr_1fr] gap-3">
-                  <div>
-                    <label className="text-xs text-steel-400 mb-1 block">Description <span className="text-red-400">*</span></label>
-                    <input className="input-field w-full h-[42px]" required placeholder="What was done" value={form.description}
-                           onChange={(e) => setForm({ ...form, description: e.target.value })} />
-                  </div>
+                <p className="text-[10px] uppercase tracking-widest text-olive-300 mb-1.5">Details & Cost</p>
+                <div className="grid md:grid-cols-[1fr_2fr] gap-3">
                   <div>
                     <label className="text-xs text-steel-400 mb-1 block">Cost (PHP)</label>
-                    <input className="input-field w-full h-[42px]" type="number" min={0} step="0.01" value={form.cost}
+                    <input type="number" min={0} step="0.01" className="input-field w-full" value={form.cost}
                            onChange={(e) => setForm({ ...form, cost: Number(e.target.value) })} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-steel-400 mb-1 block">Description <span className="text-red-400">*</span></label>
+                    <input className="input-field w-full" required placeholder="Work performed" value={form.description}
+                           onChange={(e) => setForm({ ...form, description: e.target.value })} />
                   </div>
                 </div>
               </div>
 
-              {/* Remarks */}
               <div>
                 <label className="text-xs text-steel-400 mb-1 block">Remarks</label>
                 <textarea className="input-field w-full h-16" placeholder="Optional notes" value={form.remarks}
@@ -240,28 +240,120 @@ export default function MaintenancePage() {
       {tab === "history" && (
         <div className="glass rounded-xl p-4 overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-[10px] uppercase tracking-widest text-olive-300">
-              <th className="text-left py-2">Date</th><th className="text-center">Firearm</th><th className="text-center">Type</th><th className="text-center">Description</th>
-              <th className="text-center">Before / After</th><th className="text-center">Tech</th><th className="text-center">Cost</th>
-            </tr></thead>
+            <thead>
+              <tr className="text-[10px] uppercase tracking-widest text-olive-300">
+                <th className="text-left py-2.5">Date</th>
+                <th className="text-center">Firearm</th>
+                <th className="text-center">Type</th>
+                <th className="text-center px-3">Description</th>
+                <th className="text-center">Before / After</th>
+                <th className="text-center">Tech</th>
+                <th className="text-center">Cost</th>
+              </tr>
+            </thead>
             <tbody>
-              {isError && <tr><td colSpan={7} className="py-0"><DataError onRetry={refetch} /></td></tr>}
-              {isLoading && !isError && <tr><td colSpan={7} className="text-center py-4 text-steel-400">Loading…</td></tr>}
+              {isError && (
+                <tr>
+                  <td colSpan={7} className="py-0">
+                    <DataError onRetry={refetch} />
+                  </td>
+                </tr>
+              )}
+              {isLoading && !isError && (
+                <tr>
+                  <td colSpan={7} className="text-center py-8 text-steel-400">
+                    Loading…
+                  </td>
+                </tr>
+              )}
+              {!isLoading && !isError && (!data?.data || data.data.length === 0) && (
+                <tr>
+                  <td colSpan={7} className="text-center py-10 text-steel-500 text-xs">
+                    No maintenance records found.
+                  </td>
+                </tr>
+              )}
               {data?.data?.map((m: any) => (
-                <tr key={m.maintenance_id} className="border-t border-steel-800">
-                  <td className="py-1.5 text-xs text-steel-400">{fmtDate(m.maintenance_date, "yyyy-MM-dd")}</td>
-                  <td className="text-center font-mono text-olive-100 text-xs">{m.firearm?.serial_number}</td>
-                  <td className="text-center"><span className="pill pill-tactical">{m.maintenance_type}</span></td>
-                  <td className="text-center text-steel-200 max-w-md truncate">{m.description}</td>
-                  <td className="text-center text-xs">{m.condition_before}% → {m.condition_after}%</td>
-                  <td className="text-center text-xs">{m.technician?.first_name} {m.technician?.last_name}</td>
-                  <td className="text-center text-xs">PHP {Number(m.cost).toLocaleString()}</td>
+                <tr key={m.maintenance_id} className="border-t border-steel-800/50 hover:bg-steel-800/20 transition-colors">
+                  <td className="py-2.5 text-xs text-steel-300 font-mono whitespace-nowrap">
+                    {fmtDate(m.maintenance_date, "yyyy-MM-dd")}
+                  </td>
+                  <td className="text-center font-mono text-olive-100 text-xs font-semibold whitespace-nowrap">
+                    {m.firearm?.serial_number ?? "—"}
+                  </td>
+                  <td className="text-center whitespace-nowrap">
+                    <span className={`pill text-[10px] ${maintenanceTypePill(m.maintenance_type)}`}>
+                      {m.maintenance_type}
+                    </span>
+                  </td>
+                  <td className="text-center text-xs text-steel-200 max-w-md px-3 py-2 leading-relaxed truncate" title={m.description}>
+                    {m.description}
+                  </td>
+                  <td className="text-center font-mono text-xs text-steel-300 whitespace-nowrap">
+                    <span className={m.condition_before < 70 ? "text-amber-400" : "text-steel-300"}>
+                      {m.condition_before}%
+                    </span>
+                    <span className="text-steel-600 mx-1">→</span>
+                    <span className="text-emerald-400 font-semibold">
+                      {m.condition_after}%
+                    </span>
+                  </td>
+                  <td className="text-center text-xs text-steel-300 whitespace-nowrap">
+                    {m.technician?.rank ? `${m.technician.rank} ` : ""}
+                    {m.technician?.first_name} {m.technician?.last_name}
+                  </td>
+                  <td className="text-center font-mono text-xs text-steel-300 whitespace-nowrap">
+                    {Number(m.cost) > 0 ? `PHP ${Number(m.cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+
+          {/* Pagination */}
+          {data && data.last_page > 1 && (
+            <div className="mt-4 flex items-center justify-between border-t border-steel-800/50 pt-4">
+              <div className="text-xs text-steel-400">
+                Showing <span className="font-medium text-steel-200">{data.from || 0}</span> to <span className="font-medium text-steel-200">{data.to || 0}</span> of <span className="font-medium text-steel-200">{data.total}</span> entries
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1 || isLoading}
+                  className="btn-ghost p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="text-xs text-steel-400 font-mono">
+                  Page {page} / {data.last_page}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(data.last_page, p + 1))}
+                  disabled={page === data.last_page || isLoading}
+                  className="btn-ghost p-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+function maintenanceTypePill(type: string) {
+  switch (type?.toLowerCase()) {
+    case "inspection":
+      return "pill-info";
+    case "repair":
+      return "pill-warn";
+    case "cleaning":
+      return "pill-ok";
+    case "calibration":
+      return "pill-tactical";
+    default:
+      return "pill-muted";
+  }
 }

@@ -10,7 +10,7 @@
         "bacon/bacon-qr-code": "^3.1",
         "barryvdh/laravel-dompdf": "^3.1",
         "endroid/qr-code": "^6.1",
-        "laravel/framework": "^11.0",
+        "laravel/framework": "^12.60",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.9",
         "openspout/openspout": "^5.7",
@@ -21,8 +21,8 @@
         "laravel/pint": "^1.13",
         "laravel/sail": "^1.26",
         "mockery/mockery": "^1.6",
-        "nunomaduro/collision": "^8.0",
-        "phpunit/phpunit": "^10.5",
+        "nunomaduro/collision": "^8.9.5",
+        "phpunit/phpunit": "^11.5.50",
         "spatie/laravel-ignition": "^2.4"
     },
     "autoload": {

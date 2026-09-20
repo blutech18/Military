@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -15,6 +16,7 @@ class ReportTest extends TestCase
     {
         parent::setUp();
         $this->seed();
+        config(['armory.rate_limit_per_second' => 100]);
     }
 
     private function actAsAdmin(): void
@@ -70,5 +72,38 @@ class ReportTest extends TestCase
         $this->actAsAdmin();
         $response = $this->getJson('/api/v1/reports/security-incidents');
         $response->assertOk()->assertJsonStructure(['title', 'rows']);
+    }
+
+    public function test_personnel_cannot_access_reports_or_sensitive_gps_reads(): void
+    {
+        $personnel = User::where('username', 'pvt.dela.cruz')->firstOrFail();
+        Sanctum::actingAs($personnel, [Role::PERSONNEL]);
+
+        foreach ([
+            '/api/v1/reports/inventory',
+            '/api/v1/reports/transactions',
+            '/api/v1/reports/audit',
+            '/api/v1/reports/security-incidents',
+            '/api/v1/gps/live',
+            '/api/v1/locations',
+            '/api/v1/gps/iot-status',
+        ] as $uri) {
+            $this->getJson($uri)->assertForbidden();
+        }
+    }
+
+    public function test_security_reports_require_secret_clearance_for_staff(): void
+    {
+        $custodian = User::where('username', 'armory.custodian')->firstOrFail();
+        $custodian->update(['security_clearance' => User::CLEARANCE_CONFIDENTIAL]);
+        Sanctum::actingAs($custodian, [Role::ARMORY_CUSTODIAN]);
+
+        $this->getJson('/api/v1/reports/inventory')->assertOk();
+        $this->getJson('/api/v1/reports/audit')->assertForbidden();
+        $this->getJson('/api/v1/reports/security-incidents')->assertForbidden();
+
+        $custodian->update(['security_clearance' => User::CLEARANCE_SECRET]);
+        $this->getJson('/api/v1/reports/audit')->assertOk();
+        $this->getJson('/api/v1/reports/security-incidents')->assertOk();
     }
 }

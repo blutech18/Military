@@ -8,8 +8,11 @@ use App\Models\GpsLog;
 use App\Models\Notification;
 use App\Models\Transaction;
 use App\Services\AuditLogger;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class GpsController extends Controller
 {
@@ -25,8 +28,8 @@ class GpsController extends Controller
         }
 
         $signatureHeader = $request->header('X-Armory-Signature', '');
-        $body            = $request->getContent();
-        $expected        = hash_hmac('sha256', $body, $secret);
+        $body = $request->getContent();
+        $expected = hash_hmac('sha256', $body, $secret);
 
         if (! hash_equals($expected, $signatureHeader)) {
             AuditLogger::log(
@@ -46,62 +49,142 @@ class GpsController extends Controller
             'latitude'        => ['required', 'numeric', 'between:-90,90'],
             'longitude'       => ['required', 'numeric', 'between:-180,180'],
             'accuracy_meters' => ['nullable', 'numeric', 'min:0'],
-            'speed_mps'       => ['nullable', 'numeric'],
+            'speed_mps'       => ['nullable', 'numeric', 'min:0'],
             'heading_deg'     => ['nullable', 'numeric', 'between:0,360'],
             'altitude_meters' => ['nullable', 'numeric'],
             'satellites'      => ['nullable', 'integer', 'min:0', 'max:64'],
             'battery_pct'     => ['nullable', 'integer', 'between:0,100'],
         ]);
 
-        $firearm = FirearmEquipment::with('currentLocation')->find($data['equipment_id']);
+        /*
+         * Normalise to the application timezone before comparing or storing.
+         * Devices report UTC ("...Z"), but `captured_at` is read back through a
+         * datetime cast that applies the app timezone. Without this conversion the
+         * stored wall-clock time is reinterpreted in another zone, which shifts the
+         * instant and silently defeats the replay/ordering check below.
+         */
+        $capturedAt = CarbonImmutable::parse($data['captured_at'])
+            ->setTimezone(config('app.timezone'));
+        $now = CarbonImmutable::now();
+        $maxAgeSeconds = max(1, (int) config('armory.gps.max_age_seconds', 300));
+        $futureToleranceSeconds = max(0, (int) config('armory.gps.future_tolerance_seconds', 30));
 
-        // Check geofence: any restricted location within radius?
+        if ($capturedAt->lt($now->subSeconds($maxAgeSeconds))) {
+            return response()->json(['message' => 'GPS update is too old.'], 422);
+        }
+        if ($capturedAt->gt($now->addSeconds($futureToleranceSeconds))) {
+            return response()->json(['message' => 'GPS update timestamp is in the future.'], 422);
+        }
+
         $insideAny = false;
         $insideArmory = false;
-        foreach (GpsLocation::all() as $loc) {
-            if ($loc->contains((float) $data['latitude'], (float) $data['longitude'])) {
+        foreach (GpsLocation::all() as $location) {
+            if ($location->contains((float) $data['latitude'], (float) $data['longitude'])) {
                 $insideAny = true;
-                if ($loc->is_armory) $insideArmory = true;
+                if ($location->is_armory) {
+                    $insideArmory = true;
+                }
             }
         }
 
-        $log = GpsLog::create([
-            'transaction_id'    => $data['transaction_id'] ?? optional($firearm->activeTransaction())->transaction_id,
-            'equipment_id'      => $data['equipment_id'],
-            'captured_at'       => $data['captured_at'],
-            'received_at'       => now(),
-            'latitude'          => $data['latitude'],
-            'longitude'         => $data['longitude'],
-            'accuracy_meters'   => $data['accuracy_meters'] ?? null,
-            'speed_mps'         => $data['speed_mps'] ?? null,
-            'heading_deg'       => $data['heading_deg'] ?? null,
-            'altitude_meters'   => $data['altitude_meters'] ?? null,
-            'satellites'        => $data['satellites'] ?? null,
-            'battery_pct'       => $data['battery_pct'] ?? null,
-            'is_inside_geofence'=> $insideAny,
-            'device_id'         => $data['device_id'],
-            'signature'         => substr($signatureHeader, 0, 128),
-        ]);
+        try {
+            return DB::transaction(function () use (
+                $data,
+                $capturedAt,
+                $insideAny,
+                $insideArmory,
+                $signatureHeader,
+                $request
+            ) {
+                $firearm = FirearmEquipment::lockForUpdate()->findOrFail($data['equipment_id']);
+                $activeTransaction = $firearm->transactions()
+                    ->whereIn('status', [Transaction::STATUS_ACTIVE, Transaction::STATUS_OVERDUE])
+                    ->latest('checkout_at')
+                    ->lockForUpdate()
+                    ->first();
 
-        // Geofence-violation alert: firearm is checked-out but no longer in any geofenced area.
-        if ($firearm && $firearm->availability_status === FirearmEquipment::STATUS_CHECKED_OUT && ! $insideAny) {
-            Notification::create([
-                'user_id'      => optional($firearm->activeTransaction())->authorized_by ?? 1,
-                'equipment_id' => $firearm->equipment_id,
-                'type'         => 'geofence_violation',
-                'severity'     => Notification::SEVERITY_CRITICAL,
-                'title'        => 'Geofence Violation',
-                'message'      => "{$firearm->serial_number} left all authorized zones.",
-                'payload'      => ['lat' => $data['latitude'], 'lon' => $data['longitude']],
-            ]);
+                if (! $activeTransaction) {
+                    return response()->json(['message' => 'No active firearm transaction accepts GPS updates.'], 409);
+                }
+                if (! $activeTransaction->gps_tracking_enabled) {
+                    return response()->json(['message' => 'GPS tracking is disabled for this transaction.'], 409);
+                }
+                if (! in_array($firearm->availability_status, [
+                    FirearmEquipment::STATUS_CHECKED_OUT,
+                    FirearmEquipment::STATUS_OVERDUE,
+                ], true)) {
+                    return response()->json(['message' => 'Firearm status does not permit GPS updates.'], 409);
+                }
+                if (isset($data['transaction_id'])
+                    && (int) $data['transaction_id'] !== (int) $activeTransaction->transaction_id) {
+                    return response()->json(['message' => 'Transaction does not match the active firearm assignment.'], 409);
+                }
+
+                $latestDeviceLog = GpsLog::where('device_id', $data['device_id'])
+                    ->latest('captured_at')
+                    ->lockForUpdate()
+                    ->first();
+                if ($latestDeviceLog && $capturedAt->lte($latestDeviceLog->captured_at)) {
+                    return response()->json(['message' => 'Duplicate or out-of-order GPS update.'], 409);
+                }
+
+                $previousEquipmentLog = GpsLog::where('equipment_id', $firearm->equipment_id)
+                    ->latest('captured_at')
+                    ->lockForUpdate()
+                    ->first();
+
+                $log = GpsLog::create([
+                    'transaction_id'     => $activeTransaction->transaction_id,
+                    'equipment_id'       => $firearm->equipment_id,
+                    'captured_at'        => $capturedAt,
+                    'received_at'        => now(),
+                    'latitude'           => $data['latitude'],
+                    'longitude'          => $data['longitude'],
+                    'accuracy_meters'    => $data['accuracy_meters'] ?? null,
+                    'speed_mps'          => $data['speed_mps'] ?? null,
+                    'heading_deg'        => $data['heading_deg'] ?? null,
+                    'altitude_meters'    => $data['altitude_meters'] ?? null,
+                    'satellites'         => $data['satellites'] ?? null,
+                    'battery_pct'        => $data['battery_pct'] ?? null,
+                    'is_inside_geofence' => $insideAny,
+                    'device_id'          => $data['device_id'],
+                    'signature'          => substr($signatureHeader, 0, 128),
+                ]);
+
+                $enteredUnsafeState = ! $insideAny
+                    && (! $previousEquipmentLog || $previousEquipmentLog->is_inside_geofence === true);
+
+                if ($enteredUnsafeState) {
+                    Notification::create([
+                        'user_id'      => $activeTransaction->authorized_by,
+                        'equipment_id' => $firearm->equipment_id,
+                        'type'         => 'geofence_violation',
+                        'severity'     => Notification::SEVERITY_CRITICAL,
+                        'title'        => 'Geofence Violation',
+                        'message'      => "{$firearm->serial_number} left all authorized zones.",
+                        'payload'      => [
+                            'lat' => $data['latitude'],
+                            'lon' => $data['longitude'],
+                            'transaction_id' => $activeTransaction->transaction_id,
+                        ],
+                    ]);
+                }
+
+                return response()->json([
+                    'ok'              => true,
+                    'gps_log_id'      => $log->gps_log_id,
+                    'inside_geofence' => $insideAny,
+                    'inside_armory'   => $insideArmory,
+                ]);
+            });
+        } catch (QueryException $exception) {
+            $sqlState = (string) ($exception->errorInfo[0] ?? $exception->getCode());
+            if (in_array($sqlState, ['23000', '23505'], true)) {
+                return response()->json(['message' => 'Duplicate or conflicting GPS update.'], 409);
+            }
+
+            throw $exception;
         }
-
-        return response()->json([
-            'ok'             => true,
-            'gps_log_id'     => $log->gps_log_id,
-            'inside_geofence'=> $insideAny,
-            'inside_armory'  => $insideArmory,
-        ]);
     }
 
     /**

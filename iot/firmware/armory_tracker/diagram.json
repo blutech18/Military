@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "author": "ArmoryDB · 10RCDG",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+
+    { "type": "wokwi-lcd1602", "id": "lcd", "top": -190, "left": 180,
+      "attrs": { "pins": "i2c", "i2cAddress": "0x27" } },
+
+    { "type": "wokwi-led", "id": "ledWifi", "top": -100, "left": 180,
+      "attrs": { "color": "green", "label": "WIFI" } },
+    { "type": "wokwi-resistor", "id": "rWifi", "top": -40, "left": 180,
+      "attrs": { "value": "220" } },
+
+    { "type": "wokwi-led", "id": "ledFix", "top": -100, "left": 250,
+      "attrs": { "color": "blue", "label": "GPS FIX" } },
+    { "type": "wokwi-resistor", "id": "rFix", "top": -40, "left": 250,
+      "attrs": { "value": "220" } },
+
+    { "type": "wokwi-led", "id": "ledTx", "top": -100, "left": 320,
+      "attrs": { "color": "yellow", "label": "UPLINK" } },
+    { "type": "wokwi-resistor", "id": "rTx", "top": -40, "left": 320,
+      "attrs": { "value": "220" } },
+
+    { "type": "wokwi-pushbutton", "id": "btnTamper", "top": 130, "left": 190,
+      "attrs": { "color": "red", "label": "TAMPER" } },
+
+    { "type": "wokwi-potentiometer", "id": "potBattery", "top": 210, "left": 180,
+      "attrs": { "label": "BATTERY" } },
+
+    { "type": "wokwi-buzzer", "id": "buzzer", "top": 130, "left": 330,
+      "attrs": { "volume": "0.1" } },
+
+    { "type": "wokwi-text", "id": "noteGps", "top": -250, "left": -230,
+      "attrs": { "text": "GY-NEO6MV2 GPS: no Wokwi part exists.\nNMEA is generated in firmware (SIMULATE_GPS 1).", "fontSize": "14" } },
+    { "type": "wokwi-text", "id": "notePower", "top": 300, "left": -230,
+      "attrs": { "text": "Li-Po + TP4056 + boost converter: Wokwi does not\nsimulate power supplies. Test those on real hardware.", "fontSize": "14" } },
+    { "type": "wokwi-text", "id": "noteBio", "top": 370, "left": -230,
+      "attrs": { "text": "Futronic FS80H/FS88H fingerprint scanner is a USB\ndevice on the Windows workstation, not on the ESP32.", "fontSize": "14" } }
+  ],
+  "connections": [
+    [ "esp:TX0", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX0", "$serialMonitor:TX", "", [] ],
+
+    [ "lcd:VCC", "esp:3V3", "red", [ "v-20", "h-60" ] ],
+    [ "lcd:GND", "esp:GND.2", "black", [ "v-30", "h-70" ] ],
+    [ "lcd:SDA", "esp:D21", "green", [ "v-40", "h-80" ] ],
+    [ "lcd:SCL", "esp:D22", "green", [ "v-50", "h-90" ] ],
+
+    [ "esp:D25", "rWifi:1", "green", [ "v-20", "h0" ] ],
+    [ "rWifi:2", "ledWifi:A", "green", [ "v-10" ] ],
+    [ "ledWifi:C", "esp:GND.2", "black", [ "v-20", "h-60" ] ],
+
+    [ "esp:D26", "rFix:1", "blue", [ "v-20", "h0" ] ],
+    [ "rFix:2", "ledFix:A", "blue", [ "v-10" ] ],
+    [ "ledFix:C", "esp:GND.2", "black", [ "v-20", "h-120" ] ],
+
+    [ "esp:D33", "rTx:1", "gold", [ "v-20", "h0" ] ],
+    [ "rTx:2", "ledTx:A", "gold", [ "v-10" ] ],
+    [ "ledTx:C", "esp:GND.2", "black", [ "v-20", "h-180" ] ],
+
+    [ "esp:D27", "btnTamper:1.l", "red", [ "h20", "v0" ] ],
+    [ "btnTamper:2.l", "esp:GND.2", "black", [ "h-20", "v0" ] ],
+
+    [ "esp:D32", "buzzer:1", "purple", [ "h30", "v0" ] ],
+    [ "buzzer:2", "esp:GND.2", "black", [ "h-30", "v0" ] ],
+
+    [ "potBattery:VCC", "esp:3V3", "red", [ "h-40", "v0" ] ],
+    [ "potBattery:GND", "esp:GND.2", "black", [ "h-30", "v0" ] ],
+    [ "potBattery:SIG", "esp:D34", "purple", [ "h-20", "v0" ] ]
+  ],
+  "dependencies": {}
+}

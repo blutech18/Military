@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\FirearmEquipment;
+use App\Models\Role;
+use App\Models\Transaction;
 use App\Services\AuditLogger;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
@@ -22,7 +24,14 @@ class FirearmController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $isPersonnel = $request->user()->hasRole(Role::PERSONNEL);
+        $userId = $request->user()->user_id;
+        $currentStatuses = [Transaction::STATUS_ACTIVE, Transaction::STATUS_OVERDUE];
+
         $q = FirearmEquipment::with(['category', 'currentLocation'])
+            ->when($isPersonnel, fn($query) => $query->whereHas('transactions', fn($transaction) =>
+                $transaction->where('user_id', $userId)->whereIn('status', $currentStatuses)
+            ))
             ->when($request->string('search')->trim()->value(), function ($query, $search) {
                 $query->where(function ($w) use ($search) {
                     $w->where('serial_number', 'like', "%{$search}%")
@@ -40,10 +49,22 @@ class FirearmController extends Controller
         return response()->json($q->paginate($request->integer('per_page', 15)));
     }
 
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
-        $firearm = FirearmEquipment::with(['category', 'currentLocation', 'transactions.user'])
+        $isPersonnel = $request->user()->hasRole(Role::PERSONNEL);
+        $userId = $request->user()->user_id;
+        $currentStatuses = [Transaction::STATUS_ACTIVE, Transaction::STATUS_OVERDUE];
+        $relations = ['category', 'currentLocation'];
+        if (! $isPersonnel) {
+            $relations[] = 'transactions.user';
+        }
+
+        $firearm = FirearmEquipment::with($relations)
+            ->when($isPersonnel, fn($query) => $query->whereHas('transactions', fn($transaction) =>
+                $transaction->where('user_id', $userId)->whereIn('status', $currentStatuses)
+            ))
             ->findOrFail($id);
+
         return response()->json($firearm);
     }
 
@@ -132,9 +153,17 @@ class FirearmController extends Controller
     /**
      * Returns an SVG QR code for the firearm. Encodes the JSON QR payload.
      */
-    public function qrCode(int $id): Response
+    public function qrCode(Request $request, int $id): Response
     {
-        $firearm = FirearmEquipment::with('category')->findOrFail($id);
+        $isPersonnel = $request->user()->hasRole(Role::PERSONNEL);
+        $userId = $request->user()->user_id;
+        $currentStatuses = [Transaction::STATUS_ACTIVE, Transaction::STATUS_OVERDUE];
+
+        $firearm = FirearmEquipment::with('category')
+            ->when($isPersonnel, fn($query) => $query->whereHas('transactions', fn($transaction) =>
+                $transaction->where('user_id', $userId)->whereIn('status', $currentStatuses)
+            ))
+            ->findOrFail($id);
 
         $payload = json_encode($firearm->qrPayload(), JSON_UNESCAPED_SLASHES);
 
@@ -158,16 +187,50 @@ class FirearmController extends Controller
     public function lookup(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'qr_payload' => ['required', 'string'],
+            'qr_payload' => ['required', 'string', 'max:2048'],
         ]);
 
-        $payload = json_decode($data['qr_payload'], true);
-        $serial  = $payload['serial_number'] ?? null;
-        $qrCode  = $payload['qr_code'] ?? null;
+        $raw = trim($data['qr_payload']);
+        $payload = json_decode($raw, true);
+        if (is_array($payload)) {
+            $serial = isset($payload['serial_number']) && is_string($payload['serial_number'])
+                ? trim($payload['serial_number'])
+                : null;
+            $qrCode = isset($payload['qr_code']) && is_string($payload['qr_code'])
+                ? trim($payload['qr_code'])
+                : null;
+        } else {
+            $serial = $raw;
+            $qrCode = $raw;
+        }
 
-        $firearm = FirearmEquipment::with(['category', 'currentLocation'])
-            ->when($qrCode, fn($q) => $q->where('qr_code', $qrCode))
-            ->when(! $qrCode && $serial, fn($q) => $q->where('serial_number', $serial))
+        if (! $serial && ! $qrCode) {
+            return response()->json(['message' => 'Invalid QR payload.'], 422);
+        }
+
+        $isPersonnel = $request->user()->hasRole(Role::PERSONNEL);
+        $userId = $request->user()->user_id;
+        $currentStatuses = [Transaction::STATUS_ACTIVE, Transaction::STATUS_OVERDUE];
+
+        $firearm = FirearmEquipment::with([
+            'category',
+            'currentLocation',
+            'transactions' => fn($q) => $q->whereIn('status', [Transaction::STATUS_ACTIVE, Transaction::STATUS_OVERDUE])
+                ->with('user:user_id,first_name,last_name,rank')
+                ->latest('checkout_at'),
+        ])
+            ->where(function ($query) use ($qrCode, $serial) {
+                if ($qrCode && $serial && $qrCode !== $serial) {
+                    $query->where('qr_code', $qrCode)->orWhere('serial_number', $serial);
+                } elseif ($qrCode) {
+                    $query->where('qr_code', $qrCode)->orWhere('serial_number', $qrCode);
+                } elseif ($serial) {
+                    $query->where('serial_number', $serial)->orWhere('qr_code', $serial);
+                }
+            })
+            ->when($isPersonnel, fn($query) => $query->whereHas('transactions', fn($transaction) =>
+                $transaction->where('user_id', $userId)->whereIn('status', $currentStatuses)
+            ))
             ->first();
 
         if (! $firearm) {

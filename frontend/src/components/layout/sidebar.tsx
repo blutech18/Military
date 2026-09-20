@@ -10,6 +10,7 @@ import {
   Home, LogOut, MapPinned, QrCode, Settings, Shield, ShieldAlert, Users, Wrench, X, ChevronLeft, AlertTriangle, Loader2
 } from "lucide-react";
 import { useAuthStore, hasRole } from "@/store/auth";
+import { useSidebarStore } from "@/store/sidebar";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { BrandLogo } from "@/components/brand-logo";
@@ -40,25 +41,23 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   const user     = useAuthStore((s) => s.user);
   const clear    = useAuthStore((s) => s.clear);
 
-  const [isCollapsed, setIsCollapsed] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("sidebar_collapsed") === "true";
-    }
-    return false;
-  });
+  const isCollapsed    = useSidebarStore((s) => s.isCollapsed);
+  const setIsCollapsed = useSidebarStore((s) => s.setIsCollapsed);
+  const toggleCollapse = useSidebarStore((s) => s.toggleCollapse);
 
   const [ready, setReady] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
-  useEffect(() => {
-    setReady(true);
-  }, []);
 
-  const toggleCollapse = () => {
-    const next = !isCollapsed;
-    setIsCollapsed(next);
-    localStorage.setItem("sidebar_collapsed", String(next));
-  };
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("sidebar_collapsed");
+      if (saved !== null) {
+        setIsCollapsed(saved === "true");
+      }
+    }
+    setReady(true);
+  }, [setIsCollapsed]);
 
   const items = ALL_ITEMS.filter((item) =>
     item.roles === "*" || hasRole(user, ...item.roles as unknown as string[])
@@ -111,7 +110,7 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
         </button>
 
         <div className="flex flex-col h-full w-full overflow-hidden">
-        {/* ── Header ── */}
+        {/* -- Header -- */}
         <div className={cn(
           "h-16 flex items-center pl-3 pr-3 border-b border-olive-700/30 shrink-0 w-full relative",
           ready ? "transition-[gap] duration-300" : "",
@@ -135,19 +134,19 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
           </button>
         </div>
 
-        {/* ── Nav ── */}
-        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-4 min-h-0 w-full">
-          <ul className="space-y-1 px-3">
+        {/* -- Nav -- */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 min-h-0 w-full flex flex-col justify-between">
+          <ul className="flex-1 flex flex-col justify-between gap-y-1 min-h-[460px] px-3">
             {items.map(({ href, label, icon: Icon }) => {
               const active = pathname === href || pathname.startsWith(href + "/");
               return (
-                <li key={href}>
+                <li key={href} className="flex-1 flex items-center max-h-11 min-h-[34px]">
                   <Link
                     href={href}
                     onClick={onClose}
                     title={label}
                     className={cn(
-                      "flex items-center rounded-md px-3 py-2 text-sm whitespace-nowrap overflow-hidden w-full",
+                      "flex items-center rounded-md px-3 py-2 text-sm whitespace-nowrap overflow-hidden w-full h-full",
                       ready ? "transition-[gap,color] duration-300" : "",
                       isCollapsed ? "gap-0" : "gap-3",
                       active
@@ -170,7 +169,7 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
           </ul>
         </nav>
 
-        {/* ── Footer ── */}
+        {/* -- Footer -- */}
         <div className={cn(
           "border-t border-olive-700/30 py-3 shrink-0 flex items-center w-full h-[60px]",
           ready ? "transition-[padding] duration-300" : "",

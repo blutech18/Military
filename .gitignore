@@ -48,3 +48,13 @@ emailpass.txt
 setup.bat
 .vercel
 .env*
+credentials.txt
+# Use docs/* (not docs/) so the negation below can re-include a single file.
+# Git cannot re-include a file when its parent directory itself is excluded.
+docs/*
+!docs/SYSTEM-GAP-FINDINGS-AND-IMPLEMENTATION-NOTES.md
+
+# IoT device secrets: Wi-Fi password and shared HMAC secret live in config.h
+iot/firmware/**/config.h
+# Generated single-file Wokwi sketch: config.h is inlined, so it holds secrets
+iot/wokwi/

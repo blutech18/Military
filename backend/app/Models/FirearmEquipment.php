@@ -68,7 +68,10 @@ class FirearmEquipment extends Model
 
     public function activeTransaction()
     {
-        return $this->transactions()->where('status', 'Active')->latest('checkout_at')->first();
+        return $this->transactions()
+            ->whereIn('status', [Transaction::STATUS_ACTIVE, Transaction::STATUS_OVERDUE])
+            ->latest('checkout_at')
+            ->first();
     }
 
     public function maintenanceRecords(): HasMany

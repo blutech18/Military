@@ -8,12 +8,14 @@ import {
   Shield, ShieldCheck, ShieldAlert, Wrench, Clock, Users, BellRing, Crosshair, BarChart3, History, MapPinned,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { fmtRelative, fmtDate, PURPOSES } from "@/lib/utils";
+import { fmtRelative, fmtDate, PURPOSES, cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth";
+import { useSidebarStore } from "@/store/sidebar";
 import { DataError } from "@/components/ui/data-error";
+import { AuditFeed } from "@/components/audit/audit-feed";
 
 const LiveMap = dynamic(() => import("@/components/maps/live-map").then(m => m.LiveMap), { ssr: false, loading: () => (
-  <div className="glass rounded-xl h-[420px] flex items-center justify-center text-steel-300">Loading tactical map…</div>
+  <div className="glass flex h-full min-h-[22rem] items-center justify-center rounded-xl text-steel-300">Loading tactical map…</div>
 )});
 
 const StatusPieChart = dynamic(
@@ -72,7 +74,7 @@ export default function DashboardPage() {
   return <AdminDashboard data={data} isLoading={isLoading} />;
 }
 
-/* ─────────────────────────── ADMINISTRATOR ─────────────────────────── */
+/* --------------------------- ADMINISTRATOR --------------------------- */
 function AdminDashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: boolean }) {
   const kpiTiles = [
     { label: "Total Firearms",  value: data?.kpi.total_firearms,      Icon: Shield,        tone: "text-olive-200" },
@@ -86,7 +88,7 @@ function AdminDashboard({ data, isLoading }: { data?: DashboardSummary; isLoadin
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full min-w-0 max-w-full">
       <PageHeader
         title="System Administration"
         subtitle="Full oversight of the 10RCDG armory — users, inventory, security, and audit."
@@ -95,7 +97,7 @@ function AdminDashboard({ data, isLoading }: { data?: DashboardSummary; isLoadin
       <KpiGrid tiles={kpiTiles} />
       <MapAndCharts data={data} />
       <RecentPanels data={data} />
-      <div className="grid md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <Link href="/users" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
           <Users className="h-5 w-5 text-olive-300 mb-2" />
           <p className="font-semibold text-olive-100 text-sm">User Management</p>
@@ -121,7 +123,7 @@ function AdminDashboard({ data, isLoading }: { data?: DashboardSummary; isLoadin
   );
 }
 
-/* ─────────────────────────── COMMAND OFFICER ─────────────────────────── */
+/* --------------------------- COMMAND OFFICER --------------------------- */
 function CommandDashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: boolean }) {
   const readiness = data?.kpi.readiness_pct ?? 0;
   const kpiTiles = [
@@ -134,7 +136,7 @@ function CommandDashboard({ data, isLoading }: { data?: DashboardSummary; isLoad
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full min-w-0 max-w-full">
       <PageHeader
         title="Command Overview"
         subtitle="Strategic readiness, situational awareness, and security posture."
@@ -143,12 +145,12 @@ function CommandDashboard({ data, isLoading }: { data?: DashboardSummary; isLoad
       <KpiGrid tiles={kpiTiles} />
 
       {/* Map — full width for command situational awareness */}
-      <div className="glass rounded-xl p-4">
-        <div className="flex justify-between items-center mb-3">
+      <div className="glass flex min-h-[24rem] flex-col rounded-xl p-4 sm:min-h-[30rem] lg:min-h-[clamp(32rem,62vh,44rem)]">
+        <div className="mb-3 flex items-center justify-between">
           <p className="section-title">Operational Map</p>
           <span className="pill pill-tactical">{data?.kpi.checked_out ?? 0} deployed</span>
         </div>
-        <div className="h-[450px] rounded-md overflow-hidden">
+        <div className="relative min-h-[20rem] flex-1 overflow-hidden rounded-md">
           <LiveMap />
         </div>
       </div>
@@ -173,19 +175,13 @@ function CommandDashboard({ data, isLoading }: { data?: DashboardSummary; isLoad
 
         {/* Audit feed */}
         <div className="glass rounded-xl p-4">
-          <p className="section-title mb-3">Security Audit Feed</p>
-          <ol className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-            {data?.recent_audit?.map((a: any) => (
-              <li key={a.log_id} className="border-l-2 border-olive-600/40 pl-3 py-1">
-                <p className="text-xs text-olive-200 font-semibold flex justify-between">
-                  <span>{a.action}</span>
-                  <span className="text-steel-500">{fmtRelative(a.created_at)}</span>
-                </p>
-                <p className="text-xs text-steel-400 truncate">{a.description}</p>
-                <p className="text-[10px] text-steel-500 mt-0.5">{a.user?.username ?? "system"} · {a.ip_address}</p>
-              </li>
-            ))}
-          </ol>
+          <div className="flex items-center justify-between mb-3">
+            <p className="section-title">Security Audit Feed</p>
+            <Link href="/audit" className="text-xs text-olive-400 hover:text-olive-300 transition">
+              Full Trail →
+            </Link>
+          </div>
+          <AuditFeed items={data?.recent_audit} maxHeight="max-h-[300px]" />
         </div>
       </div>
 
@@ -204,7 +200,7 @@ function CommandDashboard({ data, isLoading }: { data?: DashboardSummary; isLoad
   );
 }
 
-/* ─────────────────────────── S4 OFFICER ─────────────────────────── */
+/* --------------------------- S4 OFFICER --------------------------- */
 function S4Dashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: boolean }) {
   const kpiTiles = [
     { label: "Total Inventory", value: data?.kpi.total_firearms,      Icon: Shield,        tone: "text-olive-200" },
@@ -216,7 +212,7 @@ function S4Dashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: 
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full min-w-0 max-w-full">
       <PageHeader
         title="Logistics & Supply"
         subtitle="Inventory turnover, maintenance pipeline, and condition tracking."
@@ -285,7 +281,7 @@ function S4Dashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: 
       </div>
 
       {/* Quick actions */}
-      <div className="grid md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Link href="/firearms" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
           <Shield className="h-5 w-5 text-olive-300 mb-2" />
           <p className="font-semibold text-olive-100 text-sm">Inventory</p>
@@ -306,7 +302,7 @@ function S4Dashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: 
   );
 }
 
-/* ─────────────────────────── ARMORY CUSTODIAN ─────────────────────────── */
+/* --------------------------- ARMORY CUSTODIAN --------------------------- */
 function CustodianDashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: boolean }) {
   const kpiTiles = [
     { label: "On Rack",         value: data?.kpi.available,           Icon: ShieldCheck,   tone: "text-emerald-300" },
@@ -317,7 +313,7 @@ function CustodianDashboard({ data, isLoading }: { data?: DashboardSummary; isLo
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full min-w-0 max-w-full">
       <PageHeader
         title="Armory Operations"
         subtitle="Day-to-day rack status, issue/return activity, and overdue tracking."
@@ -326,12 +322,12 @@ function CustodianDashboard({ data, isLoading }: { data?: DashboardSummary; isLo
       <KpiGrid tiles={kpiTiles} />
 
       {/* Map — smaller, operational scope */}
-      <div className="glass rounded-xl p-4">
-        <div className="flex justify-between items-center mb-3">
+      <div className="glass flex min-h-[22rem] flex-col rounded-xl p-4 sm:min-h-[27rem] lg:min-h-[clamp(28rem,52vh,36rem)]">
+        <div className="mb-3 flex items-center justify-between">
           <p className="section-title">Active GPS Tracking</p>
           <span className="pill pill-tactical">{data?.kpi.checked_out ?? 0} in field</span>
         </div>
-        <div className="h-[320px] rounded-md overflow-hidden">
+        <div className="relative min-h-[18rem] flex-1 overflow-hidden rounded-md">
           <LiveMap />
         </div>
       </div>
@@ -388,7 +384,7 @@ function CustodianDashboard({ data, isLoading }: { data?: DashboardSummary; isLo
       </div>
 
       {/* Quick actions */}
-      <div className="grid md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Link href="/transactions/new" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent">
           <ShieldAlert className="h-5 w-5 text-olive-300 mb-2" />
           <p className="font-semibold text-olive-100 text-sm">Issue Firearm</p>
@@ -409,7 +405,7 @@ function CustodianDashboard({ data, isLoading }: { data?: DashboardSummary; isLo
   );
 }
 
-/* ─────────────────────────── PERSONNEL ─────────────────────────── */
+/* --------------------------- PERSONNEL --------------------------- */
 function PersonnelDashboard({ data, isLoading, userName }: { data?: DashboardSummary; isLoading: boolean; userName: string }) {
   const kpiTiles = [
     { label: "Assigned to Me",  value: data?.kpi.my_assigned,        Icon: Shield,       tone: "text-olive-200" },
@@ -420,7 +416,7 @@ function PersonnelDashboard({ data, isLoading, userName }: { data?: DashboardSum
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 w-full min-w-0 max-w-full">
       <PageHeader
         title={`Welcome, ${userName}`}
         subtitle="Your firearm assignments and transaction history."
@@ -476,7 +472,7 @@ function PersonnelDashboard({ data, isLoading, userName }: { data?: DashboardSum
         </div>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Link href="/scan" className="glass rounded-xl p-5 hover:border-olive-600/40 transition border border-transparent">
           <Crosshair className="h-5 w-5 text-olive-300 mb-2" />
           <p className="font-semibold text-olive-100 text-sm">Scan to Return</p>
@@ -497,7 +493,7 @@ function PersonnelDashboard({ data, isLoading, userName }: { data?: DashboardSum
   );
 }
 
-/* ─────────────────────────── SHARED HELPERS ─────────────────────────── */
+/* --------------------------- SHARED HELPERS --------------------------- */
 
 function PageHeader({ title, subtitle, isLoading }: { title: string; subtitle: string; isLoading: boolean }) {
   return (
@@ -514,24 +510,49 @@ function PageHeader({ title, subtitle, isLoading }: { title: string; subtitle: s
 }
 
 function KpiGrid({ tiles }: { tiles: { label: string; value: number | undefined; Icon: any; tone: string }[] }) {
-  const cols = tiles.length <= 5 ? "md:grid-cols-5" : tiles.length <= 6 ? "md:grid-cols-6" : "md:grid-cols-4 xl:grid-cols-8";
+  const isCollapsed = useSidebarStore((s) => s.isCollapsed);
+
+  // Responsive fallback classes conditioned on whether sidebar is open or collapsed
+  const fallbackCols =
+    tiles.length <= 5
+      ? isCollapsed
+        ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-5"
+        : "grid-cols-2 sm:grid-cols-3 xl:grid-cols-5"
+      : tiles.length <= 6
+      ? isCollapsed
+        ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
+        : "grid-cols-2 sm:grid-cols-3 xl:grid-cols-6"
+      : isCollapsed
+      ? "grid-cols-2 sm:grid-cols-4 xl:grid-cols-8"
+      : "grid-cols-2 sm:grid-cols-4 2xl:grid-cols-8";
+
+  const containerQueryClass =
+    tiles.length <= 5 ? "kpi-grid-5" : tiles.length <= 6 ? "kpi-grid-6" : "kpi-grid-8";
+
   return (
-    <div className={`grid grid-cols-2 gap-3 ${cols}`}>
-      {tiles.map((t, i) => (
-        <motion.div
-          key={t.label}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: i * 0.04 }}
-          className="kpi-tile"
-        >
-          <div className="flex items-center justify-between mb-2">
-            <t.Icon className={`h-4 w-4 ${t.tone}`} />
-            <span className="text-[10px] uppercase tracking-widest text-steel-400">{t.label}</span>
-          </div>
-          <p className="text-2xl font-bold text-olive-50 tabular-nums">{t.value ?? "—"}</p>
-        </motion.div>
-      ))}
+    <div className="kpi-container w-full min-w-0">
+      <div className={cn("kpi-grid", containerQueryClass, fallbackCols)}>
+        {tiles.map((t, i) => (
+          <motion.div
+            key={t.label}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.04 }}
+            className="kpi-tile min-w-0"
+          >
+            <div className="flex items-start justify-between gap-2 mb-2 min-w-0">
+              <t.Icon className={cn("h-4 w-4 shrink-0 mt-0.5", t.tone)} />
+              <span
+                className="text-[10px] uppercase tracking-wider text-steel-400 font-medium text-right leading-tight min-w-0 break-words line-clamp-2"
+                title={t.label}
+              >
+                {t.label}
+              </span>
+            </div>
+            <p className="text-2xl font-bold text-olive-50 tabular-nums">{t.value ?? "—"}</p>
+          </motion.div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -541,13 +562,13 @@ function MapAndCharts({ data }: { data?: DashboardSummary }) {
   const statusData    = data ? Object.entries(data.by_status ?? {}).map(([name, value]) => ({ name, value })) : [];
 
   return (
-    <div className="grid lg:grid-cols-3 gap-4">
-      <div className="lg:col-span-2 glass rounded-xl p-4">
-        <div className="flex justify-between items-center mb-3">
+    <div className="grid items-stretch gap-4 lg:grid-cols-3">
+      <div className="glass flex min-h-[28rem] flex-col rounded-xl p-4 sm:min-h-[34rem] lg:col-span-2 lg:min-h-[clamp(36rem,68vh,48rem)]">
+        <div className="mb-3 flex items-center justify-between">
           <p className="section-title">Live Tactical Map</p>
           <span className="pill pill-tactical">{data?.kpi.checked_out ?? 0} active</span>
         </div>
-        <div className="h-[420px] rounded-md overflow-hidden">
+        <div className="relative min-h-[22rem] flex-1 overflow-hidden rounded-md">
           <LiveMap />
         </div>
       </div>
@@ -575,19 +596,13 @@ function RecentPanels({ data }: { data?: DashboardSummary }) {
       </div>
 
       <div className="glass rounded-xl p-4">
-        <p className="section-title mb-3">Live Audit Feed</p>
-        <ol className="space-y-2 max-h-[320px] overflow-y-auto pr-2">
-          {data?.recent_audit?.map((a: any) => (
-            <li key={a.log_id} className="border-l-2 border-olive-600/40 pl-3 py-1">
-              <p className="text-xs text-olive-200 font-semibold flex justify-between">
-                <span>{a.action}</span>
-                <span className="text-steel-500">{fmtRelative(a.created_at)}</span>
-              </p>
-              <p className="text-xs text-steel-400 truncate">{a.description}</p>
-              <p className="text-[10px] text-steel-500 mt-0.5">{a.user?.username ?? "system"} · {a.ip_address}</p>
-            </li>
-          ))}
-        </ol>
+        <div className="flex items-center justify-between mb-3">
+          <p className="section-title">Live Audit Feed</p>
+          <Link href="/audit" className="text-xs text-olive-400 hover:text-olive-300 transition">
+            Full Trail →
+          </Link>
+        </div>
+        <AuditFeed items={data?.recent_audit} maxHeight="max-h-[320px]" />
       </div>
     </div>
   );

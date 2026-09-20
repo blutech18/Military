@@ -1,152 +1,328 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { createPortal } from "react-dom";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, RotateCcw, AlertCircle, X, Loader2 } from "lucide-react";
+import { AxiosError } from "axios";
+import { AlertCircle, Filter, Loader2, Plus, RefreshCw, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { fmtDate, fmtRelative, PURPOSES } from "@/lib/utils";
 import { useAuthStore, hasRole } from "@/store/auth";
-import { DataError } from "@/components/ui/data-error";
 import { ActionModal } from "@/components/ui/action-modal";
+import {
+  LaravelPage,
+  TransactionLedger,
+  TransactionRow,
+  TransactionStatus,
+} from "@/components/transactions/transaction-ledger";
+
+const STATUS_FILTERS: Array<{
+  value: "" | TransactionStatus;
+  label: string;
+  dot: string;
+}> = [
+  { value: "", label: "All", dot: "bg-steel-400" },
+  { value: "Active", label: "Active", dot: "bg-blue-400" },
+  { value: "Overdue", label: "Overdue", dot: "bg-red-400" },
+  { value: "Returned", label: "Returned", dot: "bg-emerald-400" },
+  { value: "Cancelled", label: "Cancelled", dot: "bg-steel-500" },
+];
+
+interface FirearmOption {
+  equipment_id: number;
+  serial_number: string;
+  model: string;
+}
+
+interface PersonnelOption {
+  user_id: number;
+  rank?: string | null;
+  first_name: string;
+  last_name: string;
+}
+
+function positiveInteger(value: string | null): number | undefined {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function apiErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof AxiosError) {
+    const data = error.response?.data as { message?: string } | undefined;
+    return data?.message ?? fallback;
+  }
+  return fallback;
+}
+
+function TransactionsPageFallback() {
+  return (
+    <div className="space-y-5">
+      <div className="h-16 animate-pulse rounded-xl bg-steel-800/40" />
+      <div className="h-[32rem] animate-pulse rounded-xl bg-steel-800/40" />
+    </div>
+  );
+}
 
 export default function TransactionsPage() {
+  return (
+    <Suspense fallback={<TransactionsPageFallback />}>
+      <TransactionsContent />
+    </Suspense>
+  );
+}
+
+function TransactionsContent() {
   const qc = useQueryClient();
-  const user = useAuthStore((s) => s.user);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const user = useAuthStore((state) => state.user);
   const canAct = hasRole(user, "Administrator", "S4 Officer", "Armory Custodian");
-  const [status, setStatus] = useState("");
-  const [returnTarget, setReturnTarget] = useState<any | null>(null);
+
+  const equipmentId = positiveInteger(searchParams.get("equipment_id"));
+  const userId = positiveInteger(searchParams.get("user_id"));
+
+  const [status, setStatus] = useState<"" | TransactionStatus>("");
+  const [page, setPage] = useState(1);
+  const [returnTarget, setReturnTarget] = useState<TransactionRow | null>(null);
   const [returnCondition, setReturnCondition] = useState(2);
   const [showIssuance, setShowIssuance] = useState(false);
 
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["transactions", status],
-    queryFn: async () => (await api.get("/transactions", { params: { status: status || undefined, per_page: 50 } })).data,
+  const transactionQuery = useQuery<LaravelPage<TransactionRow>>({
+    queryKey: ["transactions", status, page, equipmentId, userId],
+    queryFn: async () => (
+      await api.get<LaravelPage<TransactionRow>>("/transactions", {
+        params: {
+          status: status || undefined,
+          equipment_id: equipmentId,
+          user_id: userId,
+          page,
+          per_page: 15,
+        },
+      })
+    ).data,
+    placeholderData: (previous) => previous,
   });
 
-  const ret = useMutation({
+  const clearContextFilter = (key: "equipment_id" | "user_id") => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete(key);
+    setPage(1);
+    router.replace(next.size > 0 ? `${pathname}?${next.toString()}` : pathname, { scroll: false });
+  };
+
+  const clearFilters = () => {
+    setStatus("");
+    setPage(1);
+    router.replace(pathname, { scroll: false });
+  };
+
+  const hasFilters = status !== "" || equipmentId != null || userId != null;
+
+  const returnMutation = useMutation({
     mutationFn: ({ id, condition }: { id: number; condition: number }) =>
-      api.patch(`/transactions/${id}/return`, { condition_on_return: condition, notes: "Returned via UI" }),
+      api.patch(`/transactions/${id}/return`, {
+        condition_on_return: condition,
+        notes: "Returned via UI",
+      }),
     onSuccess: () => {
-      toast.success("Firearm returned & GPS deactivated.");
+      toast.success("Firearm returned and GPS tracking deactivated.");
+      setReturnTarget(null);
+      setPage(1);
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     },
-    onError: (e: any) => toast.error(e.response?.data?.message ?? "Return failed."),
+    onError: (error: unknown) => toast.error(apiErrorMessage(error, "Return failed.")),
   });
 
-  const sweep = useMutation({
-    mutationFn: () => api.post("/transactions/sweep-overdue"),
+  const sweepMutation = useMutation({
+    mutationFn: () => api.post<{ flagged: number }>("/transactions/sweep-overdue"),
     onSuccess: ({ data }) => {
-      toast.success(`Flagged ${data.flagged} overdue.`);
+      toast.success(
+        data.flagged === 1
+          ? "1 transaction flagged overdue."
+          : `${data.flagged} transactions flagged overdue.`
+      );
+      setPage(1);
       qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     },
+    onError: (error: unknown) => toast.error(apiErrorMessage(error, "Unable to sweep overdue transactions.")),
   });
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-olive-50">Transactions</h1>
+          <p className="mt-1 max-w-2xl text-sm text-steel-400">
+            Review firearm issuance, expected returns, authorization, and completed handovers.
+          </p>
         </div>
-        <div className="flex gap-2">
-          {canAct && (
-            <>
-              <button onClick={() => sweep.mutate()} className="btn-secondary text-xs">
-                <AlertCircle className="h-4 w-4" /> Sweep Overdue
+
+        {canAct && (
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+            <button
+              type="button"
+              onClick={() => sweepMutation.mutate()}
+              disabled={sweepMutation.isPending}
+              className="btn-secondary min-w-0 px-3 text-xs sm:min-w-36"
+            >
+              {sweepMutation.isPending
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <AlertCircle className="h-4 w-4" />}
+              <span className="truncate">{sweepMutation.isPending ? "Checking…" : "Sweep overdue"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowIssuance(true)}
+              className="btn-primary min-w-0 px-3 text-xs sm:min-w-36"
+            >
+              <Plus className="h-4 w-4" /> <span className="truncate">New issuance</span>
+            </button>
+          </div>
+        )}
+      </header>
+
+      <div className="glass rounded-xl p-4 space-y-4">
+        <div className="border-b border-steel-800/60 pb-3">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <Filter className="h-4 w-4 text-olive-300" />
+                <h2 id="transaction-filters-title" className="text-xs font-semibold uppercase tracking-[0.16em] text-olive-300">
+                  Filter by status
+                </h2>
+              </div>
+
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Transaction status filters">
+                {STATUS_FILTERS.map((filter) => {
+                  const active = status === filter.value;
+                  return (
+                    <button
+                      key={filter.label}
+                      type="button"
+                      onClick={() => {
+                        setStatus(filter.value);
+                        setPage(1);
+                      }}
+                      aria-pressed={active}
+                      className={`inline-flex min-h-9 items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-olive-400/70 ${
+                        active
+                          ? "border-olive-400/70 bg-olive-700/35 text-olive-50 shadow-[0_0_16px_rgba(118,128,58,0.16)]"
+                          : "border-steel-700/70 bg-steel-900/50 text-steel-300 hover:border-olive-600/50 hover:text-olive-100"
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${filter.dot}`} />
+                      {filter.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 xl:justify-end">
+              <p className="text-xs text-steel-400" aria-live="polite">
+                <span className="font-semibold text-steel-100">{transactionQuery.data?.total ?? 0}</span>{" "}
+                {transactionQuery.data?.total === 1 ? "record" : "records"}
+              </p>
+              <button
+                type="button"
+                onClick={() => transactionQuery.refetch()}
+                disabled={transactionQuery.isFetching}
+                aria-label="Refresh transactions"
+                title="Refresh transactions"
+                className="btn-ghost p-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${transactionQuery.isFetching ? "animate-spin" : ""}`} />
               </button>
-              <button onClick={() => setShowIssuance(true)} className="btn-primary"><Plus className="h-4 w-4" /> New Issuance</button>
-            </>
+            </div>
+          </div>
+
+          {(equipmentId || userId) && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-steel-800/60 pt-3">
+              <span className="text-[10px] uppercase tracking-wider text-steel-500">Context filters</span>
+              {equipmentId && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-olive-600/40 bg-olive-900/25 px-2.5 py-1 text-xs text-olive-100">
+                  Firearm #{equipmentId}
+                  <button
+                    type="button"
+                    onClick={() => clearContextFilter("equipment_id")}
+                    aria-label={`Remove firearm ${equipmentId} filter`}
+                    className="rounded-full text-olive-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-olive-400"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+              {userId && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-olive-600/40 bg-olive-900/25 px-2.5 py-1 text-xs text-olive-100">
+                  Personnel #{userId}
+                  <button
+                    type="button"
+                    onClick={() => clearContextFilter("user_id")}
+                    aria-label={`Remove personnel ${userId} filter`}
+                    className="rounded-full text-olive-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-olive-400"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+              <button type="button" onClick={clearFilters} className="text-xs text-steel-400 underline-offset-4 hover:text-olive-200 hover:underline">
+                Clear all
+              </button>
+            </div>
           )}
         </div>
-      </div>
 
-      <div className="glass rounded-xl p-4">
-        <div className="flex gap-3 mb-3">
-          <select className="input-field w-48" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">All</option>
-            <option value="Active">Active</option>
-            <option value="Returned">Returned</option>
-            <option value="Overdue">Overdue</option>
-            <option value="Cancelled">Cancelled</option>
-          </select>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-widest text-olive-300">
-                <th className="text-left py-2">#</th>
-                <th className="text-center">Firearm</th>
-                <th className="text-center">Personnel</th>
-                <th className="text-center">Authorized By</th>
-                <th className="text-center">Purpose</th>
-                <th className="text-center">Checkout</th>
-                <th className="text-center">Expected</th>
-                <th className="text-center">Returned</th>
-                <th className="text-center">Status</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {isError && <tr><td colSpan={10} className="py-0"><DataError onRetry={refetch} /></td></tr>}
-              {isLoading && !isError && <tr><td colSpan={10} className="text-center py-6 text-steel-400">Loading…</td></tr>}
-              {data?.data?.map((t: any) => (
-                <tr key={t.transaction_id} className="border-t border-steel-800 hover:bg-steel-800/30">
-                  <td className="py-1.5 font-mono text-olive-200">#{t.transaction_id}</td>
-                  <td className="text-center font-mono text-xs text-olive-100">{t.firearm?.serial_number} <span className="text-steel-500">· {t.firearm?.model}</span></td>
-                  <td className="text-center text-steel-200">{t.user?.first_name} {t.user?.last_name}</td>
-                  <td className="text-center text-steel-400 text-xs">{t.authorizer?.first_name} {t.authorizer?.last_name}</td>
-                  <td className="text-center text-xs">{PURPOSES[t.purpose]}</td>
-                  <td className="text-center text-xs text-steel-400">{fmtDate(t.checkout_at)}</td>
-                  <td className="text-center text-xs text-steel-400">{fmtDate(t.expected_return_at)}</td>
-                  <td className="text-center text-xs text-steel-400">{t.actual_return_at ? fmtRelative(t.actual_return_at) : "—"}</td>
-                  <td className="text-center"><span className={`pill pill-${t.status === "Active" ? "info" : t.status === "Overdue" ? "critical" : t.status === "Returned" ? "ok" : "muted"}`}>{t.status}</span></td>
-                  <td className="text-center">
-                    {canAct && (t.status === "Active" || t.status === "Overdue") && (
-                      <button
-                        className="btn-ghost text-xs"
-                        onClick={() => { setReturnTarget(t); setReturnCondition(2); }}
-                      >
-                        <RotateCcw className="h-3.5 w-3.5" /> Return
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {data?.data?.length === 0 && !isLoading && <tr><td colSpan={10} className="text-center py-6 text-steel-500">No transactions.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+        <TransactionLedger
+          page={transactionQuery.data}
+          isLoading={transactionQuery.isLoading}
+          isFetching={transactionQuery.isFetching}
+          isError={transactionQuery.isError}
+          canAct={canAct}
+          hasFilters={hasFilters}
+          onRetry={() => { void transactionQuery.refetch(); }}
+          onClearFilters={clearFilters}
+          onReturn={(transaction) => {
+            setReturnTarget(transaction);
+            setReturnCondition(2);
+          }}
+          onPageChange={setPage}
+        />
       </div>
 
       <ActionModal
         open={returnTarget !== null}
-        onClose={() => setReturnTarget(null)}
+        onClose={() => {
+          if (!returnMutation.isPending) setReturnTarget(null);
+        }}
         onConfirm={() => {
           if (returnTarget) {
-            ret.mutate({ id: returnTarget.transaction_id, condition: returnCondition });
-            setReturnTarget(null);
+            returnMutation.mutate({
+              id: returnTarget.transaction_id,
+              condition: returnCondition,
+            });
           }
         }}
         title="Return Firearm"
         description={`Confirm the return of firearm ${returnTarget?.firearm?.serial_number ?? ""} issued to ${returnTarget?.user?.first_name ?? ""} ${returnTarget?.user?.last_name ?? ""}.`}
         confirmLabel="Confirm Return"
         confirmVariant="primary"
+        loading={returnMutation.isPending}
       >
         <div className="space-y-3">
-          {/* Transaction Details */}
           <div>
-            <p className="text-[10px] uppercase tracking-widest text-olive-300 mb-2">Transaction Details</p>
+            <p className="mb-2 text-[10px] uppercase tracking-widest text-olive-300">Transaction details</p>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
                 <span className="text-steel-400">Transaction #</span>
-                <p className="text-olive-100 font-mono">{returnTarget?.transaction_id}</p>
+                <p className="font-mono text-olive-100">{returnTarget?.transaction_id}</p>
               </div>
               <div>
                 <span className="text-steel-400">Firearm</span>
-                <p className="text-olive-100 font-mono">{returnTarget?.firearm?.serial_number}</p>
+                <p className="font-mono text-olive-100">{returnTarget?.firearm?.serial_number}</p>
               </div>
               <div>
                 <span className="text-steel-400">Model</span>
@@ -154,19 +330,24 @@ export default function TransactionsPage() {
               </div>
               <div>
                 <span className="text-steel-400">Personnel</span>
-                <p className="text-olive-100">{returnTarget?.user?.first_name} {returnTarget?.user?.last_name}</p>
+                <p className="text-olive-100">
+                  {returnTarget?.user?.first_name} {returnTarget?.user?.last_name}
+                </p>
               </div>
             </div>
           </div>
 
-          {/* Condition Selection */}
           <div>
-            <p className="text-[10px] uppercase tracking-widest text-olive-300 mb-2">Condition on Return</p>
-            <label className="text-xs text-steel-400 mb-1 block">Select the firearm's condition</label>
+            <p className="mb-2 text-[10px] uppercase tracking-widest text-olive-300">Condition on return</p>
+            <label htmlFor="return-condition" className="mb-1 block text-xs text-steel-400">
+              Select the firearm&apos;s condition
+            </label>
             <select
+              id="return-condition"
               value={returnCondition}
-              onChange={(e) => setReturnCondition(Number(e.target.value))}
+              onChange={(event) => setReturnCondition(Number(event.target.value))}
               className="input-field w-full"
+              disabled={returnMutation.isPending}
             >
               <option value={1}>Excellent</option>
               <option value={2}>Good</option>
@@ -177,40 +358,52 @@ export default function TransactionsPage() {
         </div>
       </ActionModal>
 
-      {/* New Issuance Modal */}
-      {showIssuance && <IssuanceModal onClose={() => setShowIssuance(false)} onSuccess={() => {
-        setShowIssuance(false);
-        qc.invalidateQueries({ queryKey: ["transactions"] });
-        qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
-      }} />}
+      {showIssuance && (
+        <IssuanceModal
+          onClose={() => setShowIssuance(false)}
+          onSuccess={() => {
+            setShowIssuance(false);
+            setPage(1);
+            qc.invalidateQueries({ queryKey: ["transactions"] });
+            qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
+          }}
+        />
+      )}
     </div>
   );
 }
 
-/* ────────────── Issuance Modal ────────────── */
 function IssuanceModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => ({
     equipment_id: "",
     user_id: "",
     expected_return_at: new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 16),
     purpose: 1,
     condition_on_issue: 2,
     notes: "",
-  });
+  }));
   const [loading, setLoading] = useState(false);
 
-  const { data: firearms } = useQuery({
+  const firearmsQuery = useQuery<LaravelPage<FirearmOption>>({
     queryKey: ["available-firearms"],
-    queryFn: async () => (await api.get("/firearms", { params: { availability_status: 1, per_page: 100 } })).data,
+    queryFn: async () => (
+      await api.get<LaravelPage<FirearmOption>>("/firearms", {
+        params: { availability_status: 1, per_page: 100 },
+      })
+    ).data,
   });
 
-  const { data: personnel } = useQuery({
+  const personnelQuery = useQuery<LaravelPage<PersonnelOption>>({
     queryKey: ["personnel-for-issue"],
-    queryFn: async () => (await api.get("/users", { params: { only_active: 1, per_page: 100 } })).data,
+    queryFn: async () => (
+      await api.get<LaravelPage<PersonnelOption>>("/users", {
+        params: { role: "Personnel", only_active: 1, per_page: 100 },
+      })
+    ).data,
   });
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
     setLoading(true);
     try {
       await api.post("/transactions/issue", {
@@ -220,62 +413,116 @@ function IssuanceModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
       });
       toast.success("Firearm issued — GPS tracking activated.");
       onSuccess();
-    } catch (e: any) {
-      toast.error(e.response?.data?.message ?? "Issuance failed.");
+    } catch (error: unknown) {
+      toast.error(apiErrorMessage(error, "Issuance failed."));
     } finally {
       setLoading(false);
     }
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="glass rounded-xl p-5 w-full max-w-2xl max-h-[calc(100vh-2rem)] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onClick={() => { if (!loading) onClose(); }}
+      role="presentation"
+    >
+      <div
+        className="glass max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-xl p-5"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="issuance-modal-title"
+      >
         <form onSubmit={submit} className="space-y-3">
-          <div className="flex justify-between items-center">
-            <p className="section-title">New Issuance</p>
-            <button type="button" onClick={onClose} className="btn-ghost text-xs"><X className="h-3.5 w-3.5" /></button>
+          <div className="flex items-center justify-between">
+            <p id="issuance-modal-title" className="section-title">New issuance</p>
+            <button type="button" onClick={onClose} disabled={loading} className="btn-ghost p-1.5" aria-label="Close issuance dialog">
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <p className="text-xs text-steel-400">After approval, GPS tracking and audit logging are activated automatically.</p>
+          <p className="text-xs text-steel-400">
+            GPS tracking and audit logging activate automatically after approval.
+          </p>
 
-          {/* Firearm & Personnel */}
           <div>
-            <p className="text-[10px] uppercase tracking-widest text-olive-300 mb-1.5">Assignment</p>
-            <div className="grid md:grid-cols-2 gap-3">
+            <p className="mb-1.5 text-[10px] uppercase tracking-widest text-olive-300">Assignment</p>
+            <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="text-xs text-steel-400 mb-1 block">Firearm <span className="text-red-400">*</span></label>
-                <select className="input-field w-full" required value={form.equipment_id} onChange={(e) => setForm({ ...form, equipment_id: e.target.value })}>
-                  <option value="">— Select firearm —</option>
-                  {firearms?.data?.map((f: any) => (
-                    <option key={f.equipment_id} value={f.equipment_id}>
-                      {f.serial_number} · {f.model}
+                <label htmlFor="issuance-firearm" className="mb-1 block text-xs text-steel-400">
+                  Firearm <span className="text-red-400">*</span>
+                </label>
+                <select
+                  id="issuance-firearm"
+                  className="input-field w-full"
+                  required
+                  disabled={loading || firearmsQuery.isLoading}
+                  value={form.equipment_id}
+                  onChange={(event) => setForm({ ...form, equipment_id: event.target.value })}
+                >
+                  <option value="">{firearmsQuery.isLoading ? "Loading firearms…" : "— Select firearm —"}</option>
+                  {firearmsQuery.data?.data.map((firearm) => (
+                    <option key={firearm.equipment_id} value={firearm.equipment_id}>
+                      {firearm.serial_number} · {firearm.model}
                     </option>
                   ))}
                 </select>
+                {firearmsQuery.isError && <p className="mt-1 text-xs text-red-300">Available firearms could not be loaded.</p>}
               </div>
+
               <div>
-                <label className="text-xs text-steel-400 mb-1 block">Personnel <span className="text-red-400">*</span></label>
-                <select className="input-field w-full" required value={form.user_id} onChange={(e) => setForm({ ...form, user_id: e.target.value })}>
-                  <option value="">— Select personnel —</option>
-                  {personnel?.data?.map((u: any) => (
-                    <option key={u.user_id} value={u.user_id}>{u.rank} {u.first_name} {u.last_name}</option>
+                <label htmlFor="issuance-personnel" className="mb-1 block text-xs text-steel-400">
+                  Personnel <span className="text-red-400">*</span>
+                </label>
+                <select
+                  id="issuance-personnel"
+                  className="input-field w-full"
+                  required
+                  disabled={loading || personnelQuery.isLoading || personnelQuery.isError}
+                  value={form.user_id}
+                  onChange={(event) => setForm({ ...form, user_id: event.target.value })}
+                >
+                  <option value="">{personnelQuery.isLoading ? "Loading personnel…" : "— Select personnel —"}</option>
+                  {personnelQuery.data?.data.map((person) => (
+                    <option key={person.user_id} value={person.user_id}>
+                      {person.rank} {person.first_name} {person.last_name}
+                    </option>
                   ))}
                 </select>
+                {personnelQuery.isError && (
+                  <p className="mt-1 text-xs text-red-300">Personnel options are unavailable for this account.</p>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Details */}
           <div>
-            <p className="text-[10px] uppercase tracking-widest text-olive-300 mb-1.5">Details</p>
-            <div className="grid md:grid-cols-[2fr_1fr_1fr] gap-3">
+            <p className="mb-1.5 text-[10px] uppercase tracking-widest text-olive-300">Details</p>
+            <div className="grid gap-3 md:grid-cols-[2fr_1fr_1fr]">
               <div>
-                <label className="text-xs text-steel-400 mb-1 block">Expected Return <span className="text-red-400">*</span></label>
-                <input className="input-field w-full h-[42px]" type="datetime-local" required value={form.expected_return_at}
-                       onChange={(e) => setForm({ ...form, expected_return_at: e.target.value })} />
+                <label htmlFor="expected-return" className="mb-1 block text-xs text-steel-400">
+                  Expected return <span className="text-red-400">*</span>
+                </label>
+                <input
+                  id="expected-return"
+                  className="input-field h-[42px] w-full"
+                  type="datetime-local"
+                  required
+                  disabled={loading}
+                  value={form.expected_return_at}
+                  onChange={(event) => setForm({ ...form, expected_return_at: event.target.value })}
+                />
               </div>
               <div>
-                <label className="text-xs text-steel-400 mb-1 block">Purpose <span className="text-red-400">*</span></label>
-                <select className="input-field w-full h-[42px]" value={form.purpose} onChange={(e) => setForm({ ...form, purpose: Number(e.target.value) })}>
+                <label htmlFor="issuance-purpose" className="mb-1 block text-xs text-steel-400">
+                  Purpose <span className="text-red-400">*</span>
+                </label>
+                <select
+                  id="issuance-purpose"
+                  className="input-field h-[42px] w-full"
+                  value={form.purpose}
+                  disabled={loading}
+                  onChange={(event) => setForm({ ...form, purpose: Number(event.target.value) })}
+                >
                   <option value={1}>Training</option>
                   <option value={2}>Operation</option>
                   <option value={3}>Maintenance</option>
@@ -283,8 +530,16 @@ function IssuanceModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                 </select>
               </div>
               <div>
-                <label className="text-xs text-steel-400 mb-1 block">Condition <span className="text-red-400">*</span></label>
-                <select className="input-field w-full h-[42px]" value={form.condition_on_issue} onChange={(e) => setForm({ ...form, condition_on_issue: Number(e.target.value) })}>
+                <label htmlFor="issuance-condition" className="mb-1 block text-xs text-steel-400">
+                  Condition <span className="text-red-400">*</span>
+                </label>
+                <select
+                  id="issuance-condition"
+                  className="input-field h-[42px] w-full"
+                  value={form.condition_on_issue}
+                  disabled={loading}
+                  onChange={(event) => setForm({ ...form, condition_on_issue: Number(event.target.value) })}
+                >
                   <option value={1}>Excellent</option>
                   <option value={2}>Good</option>
                   <option value={3}>Fair</option>
@@ -294,16 +549,26 @@ function IssuanceModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
             </div>
           </div>
 
-          {/* Notes */}
           <div>
-            <label className="text-xs text-steel-400 mb-1 block">Notes</label>
-            <textarea className="input-field w-full h-16" placeholder="Optional notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            <label htmlFor="issuance-notes" className="mb-1 block text-xs text-steel-400">Notes</label>
+            <textarea
+              id="issuance-notes"
+              className="input-field h-16 w-full resize-y"
+              placeholder="Optional operational notes"
+              disabled={loading}
+              value={form.notes}
+              onChange={(event) => setForm({ ...form, notes: event.target.value })}
+            />
           </div>
 
-          <div className="flex gap-2 justify-end pt-2 border-t border-steel-800">
-            <button type="button" onClick={onClose} className="btn-secondary text-xs">Cancel</button>
-            <button disabled={loading} className="btn-primary text-xs">
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />} Authorize Issuance
+          <div className="flex flex-col-reverse gap-2 border-t border-steel-800 pt-3 sm:flex-row sm:justify-end">
+            <button type="button" onClick={onClose} disabled={loading} className="btn-secondary text-xs">Cancel</button>
+            <button
+              disabled={loading || personnelQuery.isError || firearmsQuery.isError}
+              className="btn-primary text-xs"
+            >
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              Authorize issuance
             </button>
           </div>
         </form>

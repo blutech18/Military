@@ -4,13 +4,28 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Fingerprint, Loader2, ShieldCheck, WifiOff } from "lucide-react";
+import { AxiosError } from "axios";
 import { toast } from "sonner";
 import { api, AuthUser } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 
 const BIOMETRIC_BRIDGE_URL = (process.env.NEXT_PUBLIC_BIOMETRIC_BRIDGE_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
-type BiometricMode = "checking" | "bridge" | "demo";
+type BiometricMode = "checking" | "bridge" | "unavailable" | "demo";
+type BiometricCapture = {
+  template: string;
+  source: "futronic_bridge" | "demo_placeholder";
+  captureSignature?: string;
+  capturedAt?: string;
+};
+type BridgeCaptureResponse = {
+  template?: unknown;
+  fingerprint?: unknown;
+  fingerprint_template?: unknown;
+  signature?: unknown;
+  captured_at?: unknown;
+};
 
 export default function BiometricPage() {
   const router = useRouter();
@@ -20,7 +35,7 @@ export default function BiometricPage() {
   const [mode, setMode] = useState<BiometricMode>("checking");
   const successRef = useRef(false);
   const challenge = typeof window !== "undefined" ? sessionStorage.getItem("armory_challenge") : null;
-  const username  = typeof window !== "undefined" ? sessionStorage.getItem("armory_username") : null;
+  const username = typeof window !== "undefined" ? sessionStorage.getItem("armory_username") : null;
 
   useEffect(() => { if (!challenge && !successRef.current) router.replace("/login"); }, [challenge, router]);
 
@@ -35,10 +50,10 @@ export default function BiometricPage() {
     })
       .then((resp) => {
         if (!active) return;
-        setMode(resp.ok ? "bridge" : "demo");
+        setMode(resp.ok ? "bridge" : DEMO_MODE ? "demo" : "unavailable");
       })
       .catch(() => {
-        if (active) setMode("demo");
+        if (active) setMode(DEMO_MODE ? "demo" : "unavailable");
       })
       .finally(() => clearTimeout(timeout));
 
@@ -50,10 +65,11 @@ export default function BiometricPage() {
   }, []);
 
   async function capture() {
-    setScanning(true);
-    const { template, source } = await captureFingerprintTemplate(username, challenge, mode);
+    if (mode !== "bridge" && mode !== "demo") return;
 
+    setScanning(true);
     try {
+      const { template, source, captureSignature, capturedAt } = await captureFingerprintTemplate(username, challenge, mode);
       const { data } = await api.post<{
         token: string;
         token_type: string;
@@ -63,6 +79,8 @@ export default function BiometricPage() {
         challenge_token: challenge,
         fingerprint: template,
         source,
+        capture_signature: captureSignature,
+        captured_at: capturedAt,
       });
 
       successRef.current = true;
@@ -74,23 +92,27 @@ export default function BiometricPage() {
       sessionStorage.removeItem("armory_biometric_enrolled");
 
       toast.success(`Welcome, ${data.user.full_name}.`);
-      // Hard-navigate so cookies and the rehydrated auth store are guaranteed in sync
-      // before the (authed)/layout reads them.
       window.location.assign("/dashboard");
-      // Intentionally NOT setting scanning to false here so the UI stays in a loading state
-      // while the browser navigates.
-    } catch (e: any) {
-      toast.error(e.response?.data?.message ?? "Biometric verification failed.");
+    } catch (error: unknown) {
+      const message = error instanceof AxiosError
+        ? error.response?.data?.message
+        : error instanceof Error
+          ? error.message
+          : undefined;
+      toast.error(message ?? "Biometric verification failed.");
       setScanning(false);
     }
   }
 
   const bridgeAvailable = mode === "bridge";
+  const canCapture = bridgeAvailable || mode === "demo";
   const statusText = mode === "checking"
     ? "Checking scanner bridge..."
     : bridgeAvailable
       ? "Futronic bridge online - using live scanner capture."
-      : "Scanner bridge offline - using demo placeholder template.";
+      : mode === "demo"
+        ? "Scanner bridge offline - explicit demo mode permits a placeholder template."
+        : "Scanner bridge is unavailable. Biometric sign-in is blocked until it reconnects.";
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
@@ -103,7 +125,9 @@ export default function BiometricPage() {
         <p className="text-sm text-steel-400 mb-8">
           {bridgeAvailable
             ? "Place your enrolled finger on the Futronic FS80H / FS88H scanner."
-            : "Real scanner capture is unavailable, so this login will use the prototype placeholder flow."}
+            : mode === "demo"
+              ? "The development-only placeholder flow is active."
+              : "A live scanner connection is required to continue."}
         </p>
 
         <div className={`mb-5 rounded-md border px-3 py-2 text-xs flex items-start gap-2 text-left ${
@@ -113,7 +137,9 @@ export default function BiometricPage() {
         }`}>
           {bridgeAvailable ? <ShieldCheck className="h-4 w-4 shrink-0" /> : <WifiOff className="h-4 w-4 shrink-0" />}
           <div>
-            <p className="font-semibold">{bridgeAvailable ? "Live Biometric Mode" : "Placeholder Biometric Mode"}</p>
+            <p className="font-semibold">
+              {bridgeAvailable ? "Live Biometric Mode" : mode === "demo" ? "Demo Biometric Mode" : "Scanner Unavailable"}
+            </p>
             <p className="mt-0.5">{statusText}</p>
           </div>
         </div>
@@ -128,14 +154,14 @@ export default function BiometricPage() {
           )}
         </div>
 
-        <button onClick={capture} disabled={scanning} className="btn-primary w-full mt-8">
+        <button onClick={capture} disabled={scanning || !canCapture} className="btn-primary w-full mt-8">
           {scanning ? (
             <><Loader2 className="h-4 w-4 animate-spin" /> {bridgeAvailable ? "Capturing…" : "Verifying Demo…"}</>
-          ) : bridgeAvailable ? "Capture Fingerprint" : "Use Demo Placeholder"}
+          ) : bridgeAvailable ? "Capture Fingerprint" : mode === "demo" ? "Use Demo Placeholder" : mode === "checking" ? "Checking Scanner…" : "Scanner Required"}
         </button>
 
         <p className="mt-4 text-[11px] text-steel-500">
-          Bridge URL: {BIOMETRIC_BRIDGE_URL}. When unavailable, the system clearly marks the flow as placeholder mode.
+          Bridge URL: {BIOMETRIC_BRIDGE_URL}. Placeholder capture is available only when demo mode is explicitly enabled.
         </p>
       </motion.div>
     </div>
@@ -145,41 +171,54 @@ export default function BiometricPage() {
 async function captureFingerprintTemplate(
   username: string | null,
   challenge: string | null,
-  mode: BiometricMode
-): Promise<{ template: string; source: "futronic_bridge" | "demo_placeholder" }> {
-  if (mode === "bridge") {
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    try {
-      const controller = new AbortController();
-      timeout = setTimeout(() => controller.abort(), 30_000);
-      const resp = await fetch(`${BIOMETRIC_BRIDGE_URL}/capture`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, challenge_token: challenge }),
-        signal: controller.signal,
-      });
-
-      if (!resp.ok) {
-        throw new Error(`Bridge returned ${resp.status}`);
-      }
-
-      const data = await resp.json();
-      const template = data.template ?? data.fingerprint ?? data.fingerprint_template;
-      if (typeof template !== "string" || template.length < 32) {
-        throw new Error("Bridge did not return a valid fingerprint template.");
-      }
-
-      return { template, source: "futronic_bridge" };
-    } catch {
-      toast.warning("Futronic bridge is unavailable. Falling back to demo placeholder mode.");
-    } finally {
-      if (timeout) clearTimeout(timeout);
-    }
+  mode: "bridge" | "demo"
+): Promise<BiometricCapture> {
+  if (mode === "demo") {
+    await new Promise((resolve) => setTimeout(resolve, 1400));
+    return {
+      template: `FUT-${username ?? "demo"}-fingerprint-template-fake-but-deterministic`,
+      source: "demo_placeholder",
+    };
   }
 
-  await new Promise((r) => setTimeout(r, 1400));
-  return {
-    template: `FUT-${username ?? "demo"}-fingerprint-template-fake-but-deterministic`,
-    source: "demo_placeholder",
-  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const resp = await fetch(`${BIOMETRIC_BRIDGE_URL}/capture`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, challenge_token: challenge }),
+      signal: controller.signal,
+    });
+
+    if (!resp.ok) {
+      throw new Error(`Fingerprint scanner returned status ${resp.status}.`);
+    }
+
+    const data = await resp.json() as BridgeCaptureResponse;
+    const template = data.template ?? data.fingerprint ?? data.fingerprint_template;
+    if (typeof template !== "string" || template.length < 32) {
+      throw new Error("Fingerprint scanner returned an invalid template.");
+    }
+    if (typeof data.signature !== "string" || !/^[a-f0-9]{64}$/i.test(data.signature)) {
+      throw new Error("Fingerprint scanner returned an invalid attestation signature.");
+    }
+    if (typeof data.captured_at !== "string" || Number.isNaN(Date.parse(data.captured_at))) {
+      throw new Error("Fingerprint scanner returned an invalid capture timestamp.");
+    }
+
+    return {
+      template,
+      source: "futronic_bridge",
+      captureSignature: data.signature,
+      capturedAt: data.captured_at,
+    };
+  } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Fingerprint capture timed out. Check the scanner connection.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }

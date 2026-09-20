@@ -1,0 +1,6 @@
+# Libraries Wokwi installs automatically when building this sketch.
+# The Arduino IDE ignores this file; install the same ones from Library Manager.
+TinyGPSPlus
+ArduinoJson
+# Only needed when HAS_LCD is 1
+LiquidCrystal I2C

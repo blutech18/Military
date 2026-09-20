@@ -403,7 +403,12 @@ Use a normally-open switch between GPIO27 and GND.
 When the switch closes:
 - GPIO27 is pulled from HIGH to LOW.
 - Firmware detects FALLING.
-- The tamper flag can be sent.
+- The event is printed to the Serial Monitor.
+
+Current limitation:
+The ingest API has no tamper field yet, so the tamper event is logged on the
+device only and is not stored in the database. Set HAS_TAMPER_SWITCH 1 in config.h
+to enable the local detection. Storing tamper events requires a backend change.
 
 Wiring:
 
@@ -514,54 +519,71 @@ equipment_id = 1
 
 That number must exist in firearm_equipment.equipment_id.
 
-Step 7: For the live map to show it clearly, issue the firearm first.
+Step 7: Issue the firearm first. This is REQUIRED, not optional.
 - Login to frontend.
 - Go to Transactions.
 - Issue the firearm to a user.
 - The firearm status should become Checked Out.
+
+The backend only accepts GPS data for a firearm that currently has an Active or
+Overdue transaction with GPS tracking enabled. If the firearm is not issued, every
+POST returns HTTP 409 even when your wiring and secret are perfectly correct.
+
+Step 8: View the map with a staff account.
+GPS pages are limited to Administrator, Command Officer, S4 Officer, and Armory
+Custodian. A Personnel account receives HTTP 403.
 
 
 ============================================================
 11. FIRMWARE CHOICE
 ============================================================
 
-Use this for local laptop/XAMPP/demo:
-D:\Clients\Realtime-GPS\iot\firmware\firmware_dev.ino
+There is now ONE sketch for both HTTP and HTTPS:
 
-Use this for real HTTPS deployment:
-D:\Clients\Realtime-GPS\iot\firmware\firmware.ino
+D:\Clients\Realtime-GPS\iot\firmware\armory_tracker\armory_tracker.ino
+
+You no longer edit the code to switch between HTTP and HTTPS. You change one
+setting in config.h instead:
+
+USE_HTTPS 0  -> plain HTTP for local laptop/XAMPP/demo
+USE_HTTPS 1  -> HTTPS for real deployment (needs a root CA certificate)
 
 Beginner recommendation:
-Start with firmware_dev.ino first.
+Start with USE_HTTPS 0.
 
-Why:
-- It uses HTTP.
-- Easier for local testing.
-- No certificate setup needed.
-
-After it works:
-- Move to firmware.ino for HTTPS.
-- Add proper TLS certificate/root CA.
+Note about the old files:
+The previous firmware.ino and firmware_dev.ino are kept only as reference in
+D:\Clients\Realtime-GPS\iot\firmware\reference\ and are saved as .txt so the
+Arduino IDE will not compile them. Do not use them. They both lived in the same
+sketch folder, which made the Arduino IDE compile two programs at once and fail
+with duplicate setup()/loop() errors.
 
 
 ============================================================
-12. CONFIGURE firmware_dev.ino
+12. CONFIGURE THE SKETCH
 ============================================================
 
-Open:
-D:\Clients\Realtime-GPS\iot\firmware\firmware_dev.ino
+Step 1: Create your own config file (do this once).
 
-Edit these lines:
+In PowerShell:
+cd D:\Clients\Realtime-GPS\iot\firmware\armory_tracker
+Copy-Item config.example.h config.h
 
-const char* WIFI_SSID = "YourWiFiName";
-const char* WIFI_PASS = "YourWiFiPassword";
+config.h is git-ignored, so your WiFi password and shared secret are never
+committed to the repository.
 
-const char* API_URL = "http://192.168.1.100:8000/api/v1/gps/ingest";
+Step 2: Open config.h and edit these lines:
 
-const char* DEVICE_ID = "ESP32-001";
-const int EQUIPMENT_ID = 1;
+#define WIFI_SSID "YourWiFiName"
+#define WIFI_PASS "YourWiFiPassword"
 
-const char* HMAC_SECRET = "CHANGE_ME_iot_shared_secret_at_least_32_chars_long_!!";
+#define API_URL "http://192.168.1.100:8000/api/v1/gps/ingest"
+#define USE_HTTPS 0
+
+#define DEVICE_ID "ESP32-001"
+#define EQUIPMENT_ID 1
+
+#define HMAC_SECRET "CHANGE_ME_iot_shared_secret_at_least_32_chars_long_!!"
 
 Change:
 - YourWiFiName
@@ -569,6 +591,13 @@ Change:
 - 192.168.1.100 to your laptop IP
 - EQUIPMENT_ID to the correct firearm equipment_id
 - HMAC_SECRET to match backend .env exactly
+
+Step 3: Open armory_tracker.ino in Arduino IDE and upload.
+
+Important:
+DEVICE_ID must be unique per tracker. The backend rejects a repeated
+(device_id, captured_at) pair, so two trackers sharing one ID will block
+each other's data.
 
 Important:
 ESP32 only supports 2.4GHz WiFi.
@@ -745,10 +774,13 @@ One day before defense:
 [ ] Test frontend dashboard.
 [ ] Test php artisan serve with --host=0.0.0.0.
 [ ] Confirm laptop IP address.
-[ ] Confirm ESP32 firmware API_URL uses that laptop IP.
-[ ] Confirm HMAC_SECRET matches backend .env.
+[ ] Confirm config.h exists in iot\firmware\armory_tracker\.
+[ ] Confirm API_URL in config.h uses that laptop IP.
+[ ] Confirm HMAC_SECRET matches backend .env, then run php artisan config:clear.
 [ ] Confirm equipment_id exists.
-[ ] Issue firearm in system so status is Checked Out.
+[ ] Issue firearm in system so a transaction is Active or Overdue.
+[ ] Confirm GPS tracking is enabled on that transaction.
+[ ] Log in with a staff account for the live map (Personnel gets 403).
 [ ] Test GPS outdoors.
 [ ] Confirm HTTP 200 in Serial Monitor.
 [ ] Confirm map marker appears.
@@ -830,16 +862,29 @@ Fix:
 - equipment_id must exist in database.
 - latitude and longitude must be valid.
 - captured_at must be a valid date/time.
+- captured_at must not be older than 5 minutes or more than 30 seconds ahead.
+  If you see "GPS update is too old", the device clock is not synced yet. Wait for
+  a real satellite fix so the GPS supplies correct UTC time.
 
-Problem: HTTP 503 database unavailable.
+Problem: HTTP 409 conflict.
+Fix (three possible causes):
+- The firearm is not issued. Issue it so a transaction is Active or Overdue.
+- That transaction has GPS tracking disabled. Re-enable it.
+- The fix is duplicate or out of order for this DEVICE_ID. Timestamps use 1-second
+  resolution and must always increase, so never run two trackers with the same
+  DEVICE_ID, and keep the send interval at 1000 ms or more.
+
+Problem: HTTP 503.
 Fix:
-- Start MySQL/MariaDB in XAMPP.
-- Check backend .env DB settings.
+- This means IOT_HMAC_SECRET is empty in backend .env. Set it.
+- Then run: php artisan config:clear
+- (A database outage produces HTTP 500, not 503.)
 
 Problem: GPS logs save but marker does not show on map.
 Fix:
 - Make sure firearm is Checked Out or Overdue.
 - Check equipment_id matches the issued firearm.
+- Make sure you are logged in as staff, not Personnel. Personnel receives 403.
 - Refresh frontend.
 
 

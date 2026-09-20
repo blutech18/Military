@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\FirearmEquipment;
+use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -148,5 +149,51 @@ class TransactionTest extends TestCase
         $this->actAsArmorer();
         $response = $this->getJson('/api/v1/transactions');
         $response->assertOk()->assertJsonStructure(['data']);
+    }
+
+    public function test_personnel_can_read_only_their_own_transactions(): void
+    {
+        $personnel = User::where('username', 'pvt.dela.cruz')->firstOrFail();
+        $otherPersonnel = User::where('username', 'cpl.santos')->firstOrFail();
+        $authorizer = User::where('username', 'armory.custodian')->firstOrFail();
+        $firearms = FirearmEquipment::where('availability_status', FirearmEquipment::STATUS_AVAILABLE)
+            ->limit(2)
+            ->get();
+
+        $own = Transaction::create([
+            'equipment_id' => $firearms[0]->equipment_id,
+            'user_id' => $personnel->user_id,
+            'authorized_by' => $authorizer->user_id,
+            'checkout_at' => now(),
+            'expected_return_at' => now()->addHours(4),
+            'purpose' => Transaction::PURPOSE_TRAINING,
+            'status' => Transaction::STATUS_ACTIVE,
+            'condition_on_issue' => FirearmEquipment::CONDITION_GOOD,
+            'gps_tracking_enabled' => true,
+        ]);
+        $other = Transaction::create([
+            'equipment_id' => $firearms[1]->equipment_id,
+            'user_id' => $otherPersonnel->user_id,
+            'authorized_by' => $authorizer->user_id,
+            'checkout_at' => now(),
+            'expected_return_at' => now()->addHours(4),
+            'purpose' => Transaction::PURPOSE_TRAINING,
+            'status' => Transaction::STATUS_ACTIVE,
+            'condition_on_issue' => FirearmEquipment::CONDITION_GOOD,
+            'gps_tracking_enabled' => true,
+        ]);
+
+        Sanctum::actingAs($personnel, [Role::PERSONNEL]);
+
+        $list = $this->getJson('/api/v1/transactions')->assertOk();
+        $ids = collect($list->json('data'))->pluck('transaction_id');
+        $this->assertTrue($ids->contains($own->transaction_id));
+        $this->assertFalse($ids->contains($other->transaction_id));
+
+        $this->getJson("/api/v1/transactions/{$own->transaction_id}")
+            ->assertOk()
+            ->assertJsonMissingPath('gps_logs');
+        $this->getJson("/api/v1/transactions/{$other->transaction_id}")
+            ->assertNotFound();
     }
 }

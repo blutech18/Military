@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Models\FirearmEquipment;
 use App\Models\Notification;
+use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -103,7 +104,7 @@ class DashboardController extends Controller
         $recentTransactions = Transaction::with(['firearm:equipment_id,serial_number,model', 'user:user_id,first_name,last_name,rank'])
             ->latest('checkout_at')->limit(10)->get();
 
-        $recentAudit = AuditLog::with('user:user_id,username,first_name,last_name,rank')
+        $recentAudit = AuditLog::with(['user:user_id,username,first_name,last_name,rank', 'firearm:equipment_id,serial_number,model'])
             ->latest('created_at')->limit(15)->get();
 
         // ───────── Role-specific response shaping ─────────
@@ -185,22 +186,39 @@ class DashboardController extends Controller
             return response()->json(['firearms' => [], 'users' => [], 'transactions' => []]);
         }
 
-        $firearms = FirearmEquipment::where('serial_number', 'like', "%{$q}%")
-            ->orWhere('model', 'like', "%{$q}%")
-            ->orWhere('manufacturer', 'like', "%{$q}%")
-            ->orWhere('qr_code', 'like', "%{$q}%")
+        $isPersonnel = $request->user()->hasRole(Role::PERSONNEL);
+        $userId = $request->user()->user_id;
+        $currentStatuses = [Transaction::STATUS_ACTIVE, Transaction::STATUS_OVERDUE];
+
+        $firearms = FirearmEquipment::where(function ($query) use ($q) {
+                $query->where('serial_number', 'like', "%{$q}%")
+                    ->orWhere('model', 'like', "%{$q}%")
+                    ->orWhere('manufacturer', 'like', "%{$q}%")
+                    ->orWhere('qr_code', 'like', "%{$q}%");
+            })
+            ->when($isPersonnel, fn($query) => $query->whereHas('transactions', fn($transaction) =>
+                $transaction->where('user_id', $userId)->whereIn('status', $currentStatuses)
+            ))
             ->limit(10)->get(['equipment_id', 'serial_number', 'model', 'manufacturer', 'availability_status']);
 
-        $users = User::where('username', 'like', "%{$q}%")
-            ->orWhere('first_name', 'like', "%{$q}%")
-            ->orWhere('last_name', 'like', "%{$q}%")
-            ->orWhere('rank', 'like', "%{$q}%")
-            ->limit(10)->get(['user_id', 'username', 'first_name', 'last_name', 'rank']);
+        $users = $isPersonnel
+            ? collect()
+            : User::where(function ($query) use ($q) {
+                $query->where('username', 'like', "%{$q}%")
+                    ->orWhere('first_name', 'like', "%{$q}%")
+                    ->orWhere('last_name', 'like', "%{$q}%")
+                    ->orWhere('rank', 'like', "%{$q}%");
+            })->limit(10)->get(['user_id', 'username', 'first_name', 'last_name', 'rank']);
 
         $transactions = Transaction::with('firearm:equipment_id,serial_number,model')
-            ->whereHas('firearm', fn($fq) => $fq->where('serial_number', 'like', "%{$q}%"))
-            ->orWhere('transaction_id', $q)
-            ->limit(10)->get(['transaction_id', 'equipment_id', 'status', 'checkout_at']);
+            ->where(function ($query) use ($q) {
+                $query->whereHas('firearm', fn($firearm) => $firearm->where('serial_number', 'like', "%{$q}%"));
+                if (ctype_digit($q)) {
+                    $query->orWhere('transaction_id', (int) $q);
+                }
+            })
+            ->when($isPersonnel, fn($query) => $query->where('user_id', $userId))
+            ->limit(10)->get(['transaction_id', 'equipment_id', 'user_id', 'status', 'checkout_at']);
 
         return response()->json([
             'firearms'     => $firearms,

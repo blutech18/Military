@@ -3,14 +3,19 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Mail\PasswordResetCode;
 use App\Models\Notification;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\AuditLogger;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use PragmaRX\Google2FA\Google2FA;
 
 class AuthController extends Controller
@@ -29,6 +34,7 @@ class AuthController extends Controller
             'totp_required'      => $totpRequired,
             'biometric_required' => $biometricRequired,
             'mfa_required'       => $totpRequired || $biometricRequired,
+            'recaptcha_action'   => (string) config('armory.recaptcha.expected_action', 'login'),
         ]);
     }
 
@@ -39,23 +45,31 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'username'         => ['required', 'string', 'max:50'],
-            'password'         => ['required', 'string', 'max:200'],
-            'recaptcha_token'  => ['nullable', 'string'],
+            'username'        => ['required', 'string', 'max:50'],
+            'password'        => ['required', 'string', 'max:200'],
+            'recaptcha_token' => ['nullable', 'string', 'max:4096'],
         ]);
 
         $ip = $request->ip();
         $failKey = "login-fail:{$data['username']}:{$ip}";
-        $fails   = (int) Cache::get($failKey, 0);
+        $fails = (int) Cache::get($failKey, 0);
         $threshold = (int) config('armory.failed_login_threshold', 3);
 
-        // Once threshold exceeded → require reCAPTCHA
-        if ($fails >= $threshold && empty($data['recaptcha_token'])) {
-            return response()->json([
-                'message'           => "Too many failed attempts. reCAPTCHA required.",
-                'recaptcha_required'=> true,
-                'attempts'          => $fails,
-            ], 429);
+        if ($fails >= $threshold) {
+            $recaptchaToken = (string) ($data['recaptcha_token'] ?? '');
+            if ($recaptchaToken === '' || ! $this->verifyRecaptcha($recaptchaToken, $ip)) {
+                AuditLogger::log(
+                    'recaptcha_failed',
+                    "reCAPTCHA verification failed for {$data['username']}",
+                    request: $request,
+                );
+
+                return response()->json([
+                    'message'            => 'Additional verification is required before retrying.',
+                    'recaptcha_required' => true,
+                    'attempts'           => $fails,
+                ], 429);
+            }
         }
 
         $user = User::with('role')->where('username', $data['username'])->first();
@@ -66,7 +80,6 @@ class AuthController extends Controller
             if ($user) {
                 $user->increment('failed_login_attempts');
 
-                // Lock account after N consecutive failures
                 $lockoutAttempts = (int) config('armory.lockout_attempts', 5);
                 if ($user->failed_login_attempts >= $lockoutAttempts) {
                     $lockoutMinutes = (int) config('armory.lockout_minutes', 30);
@@ -100,47 +113,194 @@ class AuthController extends Controller
             return response()->json(['message' => 'Account is locked.'], 423);
         }
 
-        // Issue a short-lived challenge token (valid 5 min) for MFA + biometric
         $challenge = bin2hex(random_bytes(32));
-
-        // Both TOTP and biometric are system-wide requirements controlled by
-        // admin toggles. When enabled, every user (regardless of role) must
-        // go through that step.
-        $needsTotp      = SystemSetting::isTotpRequired();
+        $needsTotp = SystemSetting::isTotpRequired();
         $needsBiometric = SystemSetting::isBiometricRequired();
-
-        // If both MFA methods are effectively disabled → skip to token issuance
-        if (! $needsTotp && ! $needsBiometric) {
-            AuditLogger::log('login_step1', "Password verified for {$user->username} (MFA skipped — system-wide MFA off)", $user, request: $request);
-            return $this->finalizeLogin($user, $request, $challenge);
-        }
+        $expiresAt = now()->addMinutes(5);
 
         Cache::put("login-challenge:{$challenge}", [
-            'user_id'      => $user->user_id,
-            'password_ok'  => true,
-            'totp_ok'      => ! $needsTotp,             // auto-pass if system-wide TOTP is off
-            'biometric_ok' => ! $needsBiometric,        // auto-pass if system-wide biometric is off
-            'started_at'   => now()->timestamp,
-        ], now()->addMinutes(5));
+            'user_id'            => $user->user_id,
+            'password_ok'        => true,
+            'totp_required'      => $needsTotp,
+            'biometric_required' => $needsBiometric,
+            'totp_ok'            => ! $needsTotp,
+            'biometric_ok'       => ! $needsBiometric,
+            'started_at'         => now()->timestamp,
+            'expires_at'         => $expiresAt->timestamp,
+        ], $expiresAt);
 
         AuditLogger::log('login_step1', "Password verified for {$user->username}", $user, request: $request);
 
-        // Determine the next step for the frontend
-        if ($needsTotp) {
-            $next = $user->totp_secret ? 'totp' : 'totp_setup';
-        } elseif ($needsBiometric) {
-            $next = $user->biometric_data ? 'biometric' : 'biometric_enroll';
-        } else {
-            $next = 'totp_setup';
+        if (! $needsTotp && ! $needsBiometric) {
+            return $this->finalizeLogin($user, $request, $challenge);
+        }
+
+        $next = $needsTotp
+            ? ($user->totp_secret ? 'totp' : 'totp_setup')
+            : ($user->biometric_data ? 'biometric' : 'biometric_enroll');
+
+        return response()->json([
+            'message'             => 'Password verified — proceed to MFA.',
+            'challenge_token'     => $challenge,
+            'next'                => $next,
+            'totp_enabled'        => (bool) $user->totp_enabled,
+            'biometric_enrolled'  => (bool) $user->biometric_enrolled,
+        ]);
+    }
+
+    /**
+     * Request a password reset verification code using username or email.
+     */
+    public function forgotPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'identifier' => ['required', 'string', 'max:100'],
+        ]);
+
+        $identifier = trim($data['identifier']);
+
+        $user = User::where('username', $identifier)
+            ->orWhere('email', $identifier)
+            ->first();
+
+        if (! $user) {
+            return response()->json([
+                'message' => 'No active user account found matching that username or email address.',
+            ], 404);
+        }
+
+        if ((int) $user->status !== User::STATUS_ACTIVE) {
+            return response()->json([
+                'message' => 'This account is currently inactive. Please contact an Armory Administrator.',
+            ], 403);
+        }
+
+        $throttleKey = "forgot-password-throttle:{$user->user_id}";
+        if (Cache::has($throttleKey)) {
+            return response()->json([
+                'message' => 'A password reset request was recently submitted. Please wait 60 seconds before requesting another code.',
+            ], 429);
+        }
+        Cache::put($throttleKey, true, now()->addSeconds(60));
+
+        $code = (string) random_int(100000, 999999);
+        $resetToken = bin2hex(random_bytes(24));
+        $cacheKey = "password-reset:{$resetToken}";
+
+        Cache::put($cacheKey, [
+            'user_id'    => $user->user_id,
+            'code'       => $code,
+            'email'      => $user->email,
+            'username'   => $user->username,
+            'created_at' => now()->timestamp,
+        ], now()->addMinutes(15));
+
+        try {
+            Mail::to($user->email)->send(
+                new PasswordResetCode($user, $code, $request->ip(), 15)
+            );
+        } catch (\Throwable $e) {
+            Log::warning("Failed to dispatch password reset email: " . $e->getMessage(), [
+                'user_id' => $user->user_id,
+                'email'   => $user->email,
+            ]);
+        }
+
+        AuditLogger::log(
+            'forgot_password_requested',
+            "Password reset code requested for {$user->username}",
+            $user,
+            request: $request
+        );
+
+        $maskedEmail = $this->maskEmail($user->email);
+        $isLocalOrDemo = app()->environment(['local', 'testing']) || (bool) config('armory.demo_mode');
+
+        return response()->json([
+            'message'      => "Verification code sent to {$maskedEmail}.",
+            'reset_token'  => $resetToken,
+            'masked_email' => $maskedEmail,
+            'dev_code'     => $isLocalOrDemo ? $code : null,
+        ]);
+    }
+
+    /**
+     * Complete password reset using verification code.
+     */
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'reset_token'           => ['required', 'string'],
+            'code'                  => ['required', 'string', 'size:6'],
+            'new_password'          => ['required', 'string', 'min:10', 'max:200', 'confirmed'],
+        ]);
+
+        $cacheKey = "password-reset:{$data['reset_token']}";
+        $resetData = Cache::get($cacheKey);
+
+        if (! $resetData || ! hash_equals((string) $resetData['code'], trim($data['code']))) {
+            return response()->json([
+                'message' => 'Invalid or expired verification code.',
+            ], 422);
+        }
+
+        $user = User::find($resetData['user_id']);
+        if (! $user) {
+            return response()->json([
+                'message' => 'User account not found.',
+            ], 404);
+        }
+
+        $user->update([
+            'password'              => Hash::make($data['new_password']),
+            'failed_login_attempts' => 0,
+            'locked_until'          => null,
+        ]);
+
+        Cache::forget($cacheKey);
+        Cache::forget("login-fail:{$user->username}:{$request->ip()}");
+
+        AuditLogger::log(
+            'password_reset_completed',
+            "Password reset completed for {$user->username}",
+            $user,
+            request: $request
+        );
+
+        try {
+            Notification::create([
+                'user_id'  => $user->user_id,
+                'type'     => 'password_reset',
+                'severity' => Notification::SEVERITY_WARNING,
+                'title'    => 'Password Reset Successful',
+                'message'  => "Your ArmoryDB account password was reset successfully.",
+                'payload'  => ['ip' => $request->ip(), 'time' => now()->toIso8601String()],
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning("Failed to create password reset notification: " . $e->getMessage());
         }
 
         return response()->json([
-            'message'           => 'Password verified — proceed to MFA.',
-            'challenge_token'   => $challenge,
-            'next'              => $next,
-            'totp_enabled'      => $needsTotp,
-            'biometric_enrolled'=> $needsBiometric,
+            'message'  => 'Password reset successfully. You can now sign in with your new password.',
+            'username' => $user->username,
         ]);
+    }
+
+    private function maskEmail(string $email): string
+    {
+        $parts = explode('@', $email);
+        if (count($parts) !== 2) {
+            return $email;
+        }
+        $name = $parts[0];
+        $domain = $parts[1];
+        $len = strlen($name);
+        if ($len <= 2) {
+            $masked = substr($name, 0, 1) . '***';
+        } else {
+            $masked = substr($name, 0, 2) . str_repeat('*', max(3, $len - 3)) . substr($name, -1);
+        }
+        return $masked . '@' . $domain;
     }
 
     /**
@@ -156,8 +316,11 @@ class AuthController extends Controller
         if (! $state) {
             return response()->json(['message' => 'Invalid or expired challenge.'], 419);
         }
+        if (! ($state['password_ok'] ?? false) || ! ($state['totp_required'] ?? false)) {
+            return response()->json(['message' => 'TOTP setup is not permitted for this challenge.'], 403);
+        }
 
-        $user   = User::find($state['user_id']);
+        $user = User::findOrFail($state['user_id']);
         $secret = $this->google2fa->generateSecretKey();
 
         $user->update(['totp_secret' => $secret]);
@@ -187,15 +350,17 @@ class AuthController extends Controller
         if (! $state) {
             return response()->json(['message' => 'Invalid or expired challenge.'], 419);
         }
+        if (! ($state['password_ok'] ?? false) || ! ($state['totp_required'] ?? false)) {
+            return response()->json(['message' => 'TOTP verification is not permitted for this challenge.'], 403);
+        }
 
-        $user = User::find($state['user_id']);
+        $user = User::findOrFail($state['user_id']);
 
         if (! $user->totp_secret) {
             return response()->json(['message' => 'TOTP not initialised.'], 400);
         }
 
-        $valid = $this->google2fa->verifyKey($user->totp_secret, $data['code'], 1);
-        if (! $valid) {
+        if (! $this->google2fa->verifyKey($user->totp_secret, $data['code'], 1)) {
             AuditLogger::log('failed_login', 'Invalid TOTP', $user, request: $request);
             return response()->json(['message' => 'Invalid TOTP code.'], 401);
         }
@@ -205,12 +370,11 @@ class AuthController extends Controller
         }
 
         $state['totp_ok'] = true;
-        Cache::put("login-challenge:{$data['challenge_token']}", $state, now()->addMinutes(5));
+        $this->storeChallenge($data['challenge_token'], $state);
 
         AuditLogger::log('login_step2', "TOTP verified for {$user->username}", $user, request: $request);
 
-        // If biometric is not wanted → finalize login directly
-        if (! $user->biometric_enrolled) {
+        if ($state['biometric_ok'] ?? false) {
             return $this->finalizeLogin($user, $request, $data['challenge_token']);
         }
 
@@ -228,42 +392,80 @@ class AuthController extends Controller
     public function biometricVerify(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'challenge_token' => ['required', 'string'],
-            'fingerprint'     => ['required', 'string', 'min:32'],
-            'source'          => ['nullable', 'string', 'in:futronic_bridge,demo_placeholder'],
+            'challenge_token'  => ['required', 'string'],
+            'fingerprint'      => ['required', 'string', 'min:32'],
+            'source'           => ['required', 'string', 'in:futronic_bridge,demo_placeholder'],
+            'capture_signature'=> ['nullable', 'string', 'size:64'],
+            'captured_at'      => ['nullable', 'date'],
         ]);
 
         $state = $this->loadChallenge($data['challenge_token']);
         if (! $state) {
             return response()->json(['message' => 'Invalid or expired challenge.'], 419);
         }
+        if (! ($state['password_ok'] ?? false) || ! ($state['biometric_required'] ?? false)) {
+            return response()->json(['message' => 'Biometric verification is not permitted for this challenge.'], 403);
+        }
+        if (! ($state['totp_ok'] ?? false)) {
+            return response()->json(['message' => 'Complete TOTP verification first.'], 403);
+        }
+        if ($data['source'] === 'demo_placeholder' && ! $this->demoModeAllowed()) {
+            return response()->json(['message' => 'Biometric demo mode is disabled.'], 403);
+        }
 
-        $user = User::find($state['user_id']);
+        $user = User::findOrFail($state['user_id']);
         $hash = hash('sha256', $data['fingerprint']);
 
+        if ($data['source'] === 'futronic_bridge') {
+            $bridgeSecret = (string) config('armory.biometric.bridge_hmac_secret');
+            if ($bridgeSecret === '') {
+                return response()->json(['message' => 'Biometric bridge attestation is not configured.'], 503);
+            }
+            if (empty($data['capture_signature']) || empty($data['captured_at'])) {
+                return response()->json(['message' => 'Biometric bridge attestation is required.'], 422);
+            }
+
+            $capturedAt = CarbonImmutable::parse($data['captured_at']);
+            $maxAgeSeconds = max(1, (int) config('armory.biometric.attestation_max_age_seconds', 60));
+            if ($capturedAt->lt(CarbonImmutable::now()->subSeconds($maxAgeSeconds))
+                || $capturedAt->gt(CarbonImmutable::now()->addSeconds(5))) {
+                return response()->json(['message' => 'Biometric bridge attestation is expired or invalid.'], 422);
+            }
+
+            $attestationPayload = implode('|', [
+                $data['challenge_token'],
+                $user->username,
+                $data['captured_at'],
+                $hash,
+            ]);
+            $expectedSignature = hash_hmac('sha256', $attestationPayload, $bridgeSecret);
+            if (! hash_equals($expectedSignature, strtolower($data['capture_signature']))) {
+                AuditLogger::log('failed_login', 'Invalid biometric bridge attestation', $user, request: $request);
+                return response()->json(['message' => 'Biometric bridge attestation is invalid.'], 401);
+            }
+        }
+
         if ($user->biometric_enrolled && $user->biometric_data) {
-            // Verify mode — compare against stored hash
-            if ($user->biometric_data !== $hash) {
+            if (! hash_equals($user->biometric_data, $hash)) {
                 AuditLogger::log('failed_login', 'Biometric mismatch', $user, request: $request);
                 return response()->json(['message' => 'Fingerprint does not match.'], 401);
             }
         } else {
-            // Enrollment mode — store the new fingerprint hash
             $user->update([
-                'biometric_data'    => $hash,
-                'biometric_enrolled'=> true,
+                'biometric_data'     => $hash,
+                'biometric_enrolled' => true,
             ]);
         }
 
         $state['biometric_ok'] = true;
-        Cache::put("login-challenge:{$data['challenge_token']}", $state, now()->addMinutes(5));
+        $this->storeChallenge($data['challenge_token'], $state);
 
         AuditLogger::log(
             'login_step3',
             "Biometric verified for {$user->username}",
             $user,
             request: $request,
-            metadata: ['source' => $data['source'] ?? 'unknown'],
+            metadata: ['source' => $data['source']],
         );
 
         return $this->finalizeLogin($user, $request, $data['challenge_token']);
@@ -274,49 +476,69 @@ class AuthController extends Controller
      */
     protected function finalizeLogin(User $user, Request $request, string $token): JsonResponse
     {
-        $user->update([
-            'failed_login_attempts' => 0,
-            'last_login_at'         => now(),
-            'last_login_ip'         => $request->ip(),
-            'locked_until'          => null,
-        ]);
+        $lock = Cache::lock("login-finalize:{$token}", 10);
+        if (! $lock->get()) {
+            return response()->json(['message' => 'Login finalization is already in progress.'], 409);
+        }
 
-        Cache::forget("login-challenge:{$token}");
-        Cache::forget("login-fail:{$user->username}:{$request->ip()}");
+        try {
+            $state = $this->loadChallenge($token);
+            $complete = $state
+                && (int) ($state['user_id'] ?? 0) === (int) $user->user_id
+                && ($state['password_ok'] ?? false)
+                && (! ($state['totp_required'] ?? false) || ($state['totp_ok'] ?? false))
+                && (! ($state['biometric_required'] ?? false) || ($state['biometric_ok'] ?? false));
 
-        $tokenString = $user->createToken(
-            name: 'armorydb-' . substr(md5($request->userAgent() ?? ''), 0, 8),
-            abilities: [optional($user->role)->role_name ?? 'personnel'],
-            expiresAt: SystemSetting::isSessionExpiryEnabled()
-                ? now()->addMinutes((int) config('armory.session.timeout_minutes'))
-                : null
-        )->plainTextToken;
+            if (! $complete) {
+                return response()->json(['message' => 'Authentication challenge is incomplete or expired.'], 403);
+            }
 
-        AuditLogger::log('login', "Successful login by {$user->username}", $user, request: $request);
+            Cache::forget("login-challenge:{$token}");
 
-        $user->load('role');
+            $user->update([
+                'failed_login_attempts' => 0,
+                'last_login_at'         => now(),
+                'last_login_ip'         => $request->ip(),
+                'locked_until'          => null,
+            ]);
 
-        $expiresIn = SystemSetting::isSessionExpiryEnabled()
-            ? (int) config('armory.session.timeout_minutes') * 60
-            : null;
+            Cache::forget("login-fail:{$user->username}:{$request->ip()}");
 
-        return response()->json([
-            'message'       => 'Login successful.',
-            'token'         => $tokenString,
-            'token_type'    => 'Bearer',
-            'expires_in'    => $expiresIn,
-            'user'          => [
-                'user_id'            => $user->user_id,
-                'username'           => $user->username,
-                'full_name'          => $user->fullName(),
-                'email'              => $user->email,
-                'rank'               => $user->rank,
-                'role'               => optional($user->role)->role_name,
-                'security_clearance' => $user->security_clearance,
-                'totp_enabled'       => (bool) $user->totp_enabled,
-                'biometric_enrolled' => (bool) $user->biometric_enrolled,
-            ],
-        ]);
+            $tokenString = $user->createToken(
+                name: 'armorydb-' . substr(md5($request->userAgent() ?? ''), 0, 8),
+                abilities: [optional($user->role)->role_name ?? 'personnel'],
+                expiresAt: SystemSetting::isSessionExpiryEnabled()
+                    ? now()->addMinutes((int) config('armory.session.timeout_minutes'))
+                    : null
+            )->plainTextToken;
+
+            AuditLogger::log('login', "Successful login by {$user->username}", $user, request: $request);
+
+            $user->load('role');
+            $expiresIn = SystemSetting::isSessionExpiryEnabled()
+                ? (int) config('armory.session.timeout_minutes') * 60
+                : null;
+
+            return response()->json([
+                'message'    => 'Login successful.',
+                'token'      => $tokenString,
+                'token_type' => 'Bearer',
+                'expires_in' => $expiresIn,
+                'user'       => [
+                    'user_id'            => $user->user_id,
+                    'username'           => $user->username,
+                    'full_name'          => $user->fullName(),
+                    'email'              => $user->email,
+                    'rank'               => $user->rank,
+                    'role'               => optional($user->role)->role_name,
+                    'security_clearance' => $user->security_clearance,
+                    'totp_enabled'       => (bool) $user->totp_enabled,
+                    'biometric_enrolled' => (bool) $user->biometric_enrolled,
+                ],
+            ]);
+        } finally {
+            $lock->release();
+        }
     }
 
     public function me(Request $request): JsonResponse
@@ -467,6 +689,69 @@ class AuthController extends Controller
 
     protected function loadChallenge(string $token): ?array
     {
-        return Cache::get("login-challenge:{$token}");
+        $state = Cache::get("login-challenge:{$token}");
+        if (! is_array($state)) {
+            return null;
+        }
+
+        if ((int) ($state['expires_at'] ?? 0) <= now()->timestamp) {
+            Cache::forget("login-challenge:{$token}");
+            return null;
+        }
+
+        return $state;
+    }
+
+    protected function storeChallenge(string $token, array $state): void
+    {
+        $expiresAt = (int) ($state['expires_at'] ?? 0);
+        if ($expiresAt <= now()->timestamp) {
+            Cache::forget("login-challenge:{$token}");
+            return;
+        }
+
+        Cache::put("login-challenge:{$token}", $state, now()->setTimestamp($expiresAt));
+    }
+
+    protected function verifyRecaptcha(string $token, string $ip): bool
+    {
+        if ($this->demoModeAllowed() && hash_equals('demo-recaptcha-bypass', $token)) {
+            return true;
+        }
+
+        $secret = (string) config('armory.recaptcha.secret');
+        if ($secret === '') {
+            return false;
+        }
+
+        try {
+            $response = Http::asForm()
+                ->timeout(5)
+                ->post((string) config('armory.recaptcha.verify_url'), [
+                    'secret'   => $secret,
+                    'response' => $token,
+                    'remoteip' => $ip,
+                ]);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        if (! $response->successful()) {
+            return false;
+        }
+
+        $result = $response->json();
+        $expectedHostname = (string) config('armory.recaptcha.expected_hostname');
+
+        return is_array($result)
+            && ($result['success'] ?? false) === true
+            && ($result['action'] ?? null) === config('armory.recaptcha.expected_action')
+            && (float) ($result['score'] ?? 0) >= (float) config('armory.recaptcha.min_score')
+            && ($expectedHostname === '' || ($result['hostname'] ?? null) === $expectedHostname);
+    }
+
+    protected function demoModeAllowed(): bool
+    {
+        return app()->environment(['local', 'testing']) && (bool) config('armory.demo_mode');
     }
 }

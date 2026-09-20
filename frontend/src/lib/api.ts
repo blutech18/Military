@@ -21,17 +21,16 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Retry-on-429 backoff. The backend enforces a strict 5 req/s limit per user;
-// React Strict Mode in dev and bursty mounts (multiple components hitting the
-// same endpoint at once) can briefly trip it. Rather than surface those as
-// errors, retry once with an exponential backoff respecting the Retry-After
-// header. Idempotent reads (GET) are also retried on transient network errors.
+// Retry transient failures only for idempotent reads. Mutating requests must never
+// be replayed automatically because the server may have committed the write even
+// when the client did not receive the response.
 const MAX_RETRIES = 3;
+const SAFE_RETRY_METHODS = new Set(["get", "head", "options"]);
+
+type RetryableRequestConfig = AxiosRequestConfig & { __retryCount?: number };
 
 function isRetryableNetworkError(error: AxiosError): boolean {
-  // No response at all (CORS, connection reset, abort, etc.)
-  if (!error.response) return true;
-  return false;
+  return !error.response && error.code !== "ERR_CANCELED";
 }
 
 function computeRetryDelay(error: AxiosError, attempt: number): number {
@@ -48,13 +47,11 @@ function computeRetryDelay(error: AxiosError, attempt: number): number {
 api.interceptors.response.use(
   (resp) => resp,
   async (error: AxiosError<{ message?: string }>) => {
-    const config = error.config as (AxiosRequestConfig & { __retryCount?: number }) | undefined;
+    const config = error.config as RetryableRequestConfig | undefined;
     const status = error.response?.status;
 
-    // 401 → log out, same as before.
     if (typeof window !== "undefined" && status === 401) {
-      Cookies.remove(TOKEN_COOKIE);
-      Cookies.remove(USER_COOKIE);
+      removeAuthCookies();
       if (!window.location.pathname.startsWith("/login")) {
         window.location.href = "/login";
       }
@@ -64,10 +61,13 @@ api.interceptors.response.use(
     if (!config) return Promise.reject(error);
     config.__retryCount = config.__retryCount ?? 0;
 
-    const isGet = (config.method ?? "get").toLowerCase() === "get";
+    const method = (config.method ?? "get").toLowerCase();
+    const isSafeMethod = SAFE_RETRY_METHODS.has(method);
+    const isTransientFailure = status === 429 || status === 503 || isRetryableNetworkError(error);
     const shouldRetry =
+      isSafeMethod &&
       config.__retryCount < MAX_RETRIES &&
-      (status === 429 || status === 503 || (isGet && isRetryableNetworkError(error)));
+      isTransientFailure;
 
     if (!shouldRetry) return Promise.reject(error);
 
@@ -78,21 +78,33 @@ api.interceptors.response.use(
   }
 );
 
+function authCookieAttributes(): Cookies.CookieAttributes {
+  const secure = typeof window !== "undefined"
+    ? window.location.protocol === "https:"
+    : baseURL.startsWith("https://");
+
+  return { sameSite: "strict", secure, path: "/" };
+}
+
+function removeAuthCookies() {
+  const opts = authCookieAttributes();
+  Cookies.remove(TOKEN_COOKIE, opts);
+  Cookies.remove(USER_COOKIE, opts);
+}
+
 export function persistAuth(token: string, user: unknown, ttlMinutes: number | null = 15) {
-  const opts: Cookies.CookieAttributes = { sameSite: "strict" };
+  const opts = authCookieAttributes();
   if (ttlMinutes !== null && ttlMinutes > 0) {
     opts.expires = new Date(Date.now() + ttlMinutes * 60_000);
   } else {
-    // No expiry — cookie persists until browser session ends or explicit logout
-    opts.expires = 365; // 1 year as a practical "no expiry"
+    opts.expires = 365;
   }
   Cookies.set(TOKEN_COOKIE, token, opts);
   Cookies.set(USER_COOKIE, JSON.stringify(user), opts);
 }
 
 export function clearAuth() {
-  Cookies.remove(TOKEN_COOKIE);
-  Cookies.remove(USER_COOKIE);
+  removeAuthCookies();
 }
 
 export function readAuth(): { token?: string; user?: AuthUser } {

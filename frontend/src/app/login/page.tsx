@@ -1,10 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
-import { Lock, User, AlertTriangle, Loader2 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Lock,
+  User,
+  AlertTriangle,
+  Loader2,
+  Eye,
+  EyeOff,
+  KeyRound,
+  ArrowLeft,
+  Mail,
+  CheckCircle2,
+  RefreshCw,
+  Sparkles,
+} from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { AxiosError } from "axios";
@@ -28,14 +41,105 @@ interface AuthRequirements {
   totp_required: boolean;
   biometric_required: boolean;
   mfa_required: boolean;
+  recaptcha_action: string;
 }
+
+interface ForgotPasswordResponse {
+  message: string;
+  reset_token: string;
+  masked_email: string;
+  dev_code?: string | null;
+}
+
+interface ResetPasswordResponse {
+  message: string;
+  username?: string;
+}
+
+type RecaptchaApi = {
+  ready(callback: () => void): void;
+  execute(siteKey: string, options: { action: string }): Promise<string>;
+};
+
+const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY ?? "";
+const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+let recaptchaLoader: Promise<RecaptchaApi> | null = null;
+
+function loadRecaptcha(): Promise<RecaptchaApi> {
+  if (DEMO_MODE && !RECAPTCHA_SITE_KEY) {
+    return Promise.reject(new Error("demo"));
+  }
+
+  if (!RECAPTCHA_SITE_KEY) {
+    return Promise.reject(new Error("reCAPTCHA is not configured. Contact the system administrator."));
+  }
+
+  const existing = (window as Window & { grecaptcha?: RecaptchaApi }).grecaptcha;
+  if (existing) return Promise.resolve(existing);
+  if (recaptchaLoader) return recaptchaLoader;
+
+  recaptchaLoader = new Promise<RecaptchaApi>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(RECAPTCHA_SITE_KEY)}`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      const api = (window as Window & { grecaptcha?: RecaptchaApi }).grecaptcha;
+      if (api) resolve(api);
+      else reject(new Error("reCAPTCHA failed to initialize."));
+    };
+    script.onerror = () => reject(new Error("reCAPTCHA could not be loaded."));
+    document.head.appendChild(script);
+  });
+
+  return recaptchaLoader;
+}
+
+async function createRecaptchaToken(action: string): Promise<string> {
+  if (DEMO_MODE && !RECAPTCHA_SITE_KEY) return "demo-recaptcha-bypass";
+
+  const recaptcha = await loadRecaptcha();
+  await new Promise<void>((resolve) => recaptcha.ready(resolve));
+  return recaptcha.execute(RECAPTCHA_SITE_KEY, { action });
+}
+
+type AuthMode = "login" | "forgot_request" | "forgot_reset";
 
 export default function LoginPage() {
   const router = useRouter();
+
+  // Mode: login, forgot_request, or forgot_reset
+  const [mode, setMode] = useState<AuthMode>("login");
+
+  // Login form state
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [showRecaptcha, setShowRecaptcha] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Forgot password form state
+  const [resetIdentifier, setResetIdentifier] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [maskedEmail, setMaskedEmail] = useState("");
+  const [devCode, setDevCode] = useState<string | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Countdown timer for resending reset code
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCooldown]);
+
   const { data: authRequirements, isLoading: loadingRequirements } = useQuery<AuthRequirements>({
     queryKey: ["auth-requirements"],
     queryFn: async () => (await api.get<AuthRequirements>("/auth/requirements")).data,
@@ -51,14 +155,17 @@ export default function LoginPage() {
       ? "Continue → MFA"
       : "Sign In";
 
-  async function submit(e: React.FormEvent) {
+  async function submitLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
+      const recaptchaToken = showRecaptcha
+        ? await createRecaptchaToken(authRequirements?.recaptcha_action ?? "login")
+        : undefined;
       const { data } = await api.post<LoginResponse>("/auth/login", {
         username,
         password,
-        recaptcha_token: showRecaptcha ? "demo-recaptcha-bypass" : undefined,
+        recaptcha_token: recaptchaToken,
       });
 
       // If both MFA methods are disabled, the backend returns a token directly
@@ -84,16 +191,131 @@ export default function LoginPage() {
         toast.success("Password verified — proceed to MFA.");
         router.push("/login/totp");
       }
-    } catch (err) {
-      const e = err as AxiosError<{ message: string; recaptcha_required?: boolean }>;
-      if (e.response?.status === 429 && e.response.data.recaptcha_required) {
-        setShowRecaptcha(true);
-        toast.warning("Too many failed attempts. Solve the challenge to retry.");
+    } catch (error: unknown) {
+      if (error instanceof AxiosError) {
+        if (error.response?.status === 429 && error.response.data?.recaptcha_required) {
+          setShowRecaptcha(true);
+          toast.warning("Too many failed attempts. Additional verification is required to retry.");
+        } else {
+          toast.error(error.response?.data?.message ?? "Login failed.");
+        }
       } else {
-        toast.error(e.response?.data?.message ?? "Login failed.");
+        toast.error(error instanceof Error ? error.message : "Login failed.");
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Step 1: Request reset code
+  async function submitForgotRequest(e: React.FormEvent) {
+    e.preventDefault();
+    if (!resetIdentifier.trim()) {
+      toast.warning("Please provide your username or email address.");
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const { data } = await api.post<ForgotPasswordResponse>("/auth/forgot-password", {
+        identifier: resetIdentifier.trim(),
+      });
+      setResetToken(data.reset_token);
+      setMaskedEmail(data.masked_email);
+      setDevCode(data.dev_code ?? null);
+      if (data.dev_code) {
+        setResetCode(data.dev_code);
+      }
+      setResendCooldown(60);
+      setMode("forgot_reset");
+      toast.success(data.message || "Verification code dispatched.");
+    } catch (error: unknown) {
+      if (error instanceof AxiosError) {
+        toast.error(error.response?.data?.message ?? "Unable to request password reset.");
+      } else {
+        toast.error(error instanceof Error ? error.message : "Request failed.");
+      }
+    } finally {
+      setForgotLoading(false);
+    }
+  }
+
+  // Step 2: Resend code
+  async function handleResendCode() {
+    if (resendCooldown > 0 || !resetIdentifier.trim()) return;
+    setForgotLoading(true);
+    try {
+      const { data } = await api.post<ForgotPasswordResponse>("/auth/forgot-password", {
+        identifier: resetIdentifier.trim(),
+      });
+      setResetToken(data.reset_token);
+      setMaskedEmail(data.masked_email);
+      setDevCode(data.dev_code ?? null);
+      if (data.dev_code) {
+        setResetCode(data.dev_code);
+      }
+      setResendCooldown(60);
+      toast.success("A new verification code has been dispatched.");
+    } catch (error: unknown) {
+      if (error instanceof AxiosError) {
+        toast.error(error.response?.data?.message ?? "Failed to resend code.");
+      } else {
+        toast.error("Failed to resend verification code.");
+      }
+    } finally {
+      setForgotLoading(false);
+    }
+  }
+
+  // Step 3: Verify code and set new password
+  async function submitResetPassword(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!resetCode.trim() || resetCode.trim().length !== 6) {
+      toast.warning("Please enter the 6-digit verification code.");
+      return;
+    }
+
+    if (newPassword.length < 10) {
+      toast.warning("New password must be at least 10 characters long.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast.error("Password confirmation does not match.");
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      const { data } = await api.post<ResetPasswordResponse>("/auth/reset-password", {
+        reset_token: resetToken,
+        code: resetCode.trim(),
+        new_password: newPassword,
+        new_password_confirmation: confirmPassword,
+      });
+
+      toast.success(data.message || "Password updated successfully!");
+
+      // Transition back to login prefilled with the username
+      if (data.username) {
+        setUsername(data.username);
+      } else if (!resetIdentifier.includes("@")) {
+        setUsername(resetIdentifier);
+      }
+      setPassword("");
+      setResetCode("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setDevCode(null);
+      setMode("login");
+    } catch (error: unknown) {
+      if (error instanceof AxiosError) {
+        toast.error(error.response?.data?.message ?? "Password reset failed.");
+      } else {
+        toast.error(error instanceof Error ? error.message : "Password reset failed.");
+      }
+    } finally {
+      setForgotLoading(false);
     }
   }
 
@@ -122,71 +344,310 @@ export default function LoginPage() {
             Real-Time GPS Firearm Tracking & Management System.
             QR identification, biometric authentication, immutable audit trails.
           </p>
-
         </motion.div>
       </div>
 
-      {/* Right — login form */}
+      {/* Right — dynamic authentication panel */}
       <div className="flex items-center justify-center p-6">
-        <motion.form
-          onSubmit={submit}
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="glass w-full max-w-md rounded-2xl p-8"
-        >
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-olive-50">Authenticate</h2>
-            <p className="text-sm text-steel-400">Enter your credentials to begin.</p>
-          </div>
+        <div className="glass w-full max-w-md rounded-2xl p-8 overflow-hidden">
+          <AnimatePresence mode="wait">
+            {/* VIEW 1: SIGN IN */}
+            {mode === "login" && (
+              <motion.form
+                key="login-form"
+                onSubmit={submitLogin}
+                initial={{ opacity: 0, x: -16 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 16 }}
+                transition={{ duration: 0.25 }}
+              >
+                <div className="mb-6">
+                  <h2 className="text-2xl font-bold text-olive-50">Authenticate</h2>
+                  <p className="text-sm text-steel-400">Enter your credentials to begin.</p>
+                </div>
 
-          <label className="block text-xs uppercase tracking-widest text-olive-300 mb-1">Username</label>
-          <div className="relative mb-4">
-            <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
-            <input
-              required
-              autoFocus
-              autoComplete="username"
-              className="input-field pl-9"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="e.g. armory.custodian"
-            />
-          </div>
+                {/* Username Input */}
+                <label className="block text-xs uppercase tracking-widest text-olive-300 mb-1">
+                  Username
+                </label>
+                <div className="relative mb-4">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
+                  <input
+                    required
+                    autoFocus
+                    autoComplete="username"
+                    className="input-field pl-9"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="e.g. armory.custodian"
+                  />
+                </div>
 
-          <label className="block text-xs uppercase tracking-widest text-olive-300 mb-1">Password</label>
-          <div className="relative mb-2">
-            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
-            <input
-              required
-              type="password"
-              autoComplete="current-password"
-              className="input-field pl-9"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-            />
-          </div>
+                {/* Password Input + Forgot Password Action */}
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs uppercase tracking-widest text-olive-300">
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (username) setResetIdentifier(username);
+                      setMode("forgot_request");
+                    }}
+                    className="text-xs text-olive-400 hover:text-olive-200 transition-colors focus:outline-none underline-offset-4 hover:underline"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+                <div className="relative mb-2">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
+                  <input
+                    required
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    className="input-field pl-9 pr-10"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex={-1}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 hover:text-olive-300 transition-colors p-1"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
 
-          {showRecaptcha && (
-            <div className="mt-3 mb-2 rounded-md border border-amber-700/40 bg-amber-900/20 p-3 text-xs text-amber-200 flex gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              <div>
-                Multiple failed attempts detected. In production, Google reCAPTCHA v3 will challenge you here.
-                Click submit to retry.
-              </div>
-            </div>
-          )}
+                {showRecaptcha && (
+                  <div className="mt-3 mb-2 rounded-md border border-amber-700/40 bg-amber-900/20 p-3 text-xs text-amber-200 flex gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <div>
+                      Multiple failed attempts detected. Google reCAPTCHA v3 will verify this retry when you submit.
+                    </div>
+                  </div>
+                )}
 
-          <button type="submit" disabled={loading} className="btn-primary w-full mt-6">
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            {submitLabel}
-          </button>
+                <button type="submit" disabled={loading} className="btn-primary w-full mt-6">
+                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {submitLabel}
+                </button>
 
-          <p className="mt-6 text-center text-[11px] uppercase tracking-widest text-steel-500">
-            Authorized personnel only · all actions audited
-          </p>
-        </motion.form>
+                <p className="mt-6 text-center text-[11px] uppercase tracking-widest text-steel-500">
+                  Authorized personnel only · all actions audited
+                </p>
+              </motion.form>
+            )}
+
+            {/* VIEW 2: FORGOT PASSWORD - STEP 1 (REQUEST CODE) */}
+            {mode === "forgot_request" && (
+              <motion.form
+                key="forgot-request-form"
+                onSubmit={submitForgotRequest}
+                initial={{ opacity: 0, x: 16 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -16 }}
+                transition={{ duration: 0.25 }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setMode("login")}
+                  className="inline-flex items-center gap-1.5 text-xs text-steel-400 hover:text-olive-300 transition-colors mb-4 focus:outline-none"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  <span>Back to Sign In</span>
+                </button>
+
+                <div className="mb-6">
+                  <h2 className="text-2xl font-bold text-olive-50">Account Recovery</h2>
+                  <p className="text-sm text-steel-400 mt-1">
+                    Enter your username or registered email address to receive an authentication code.
+                  </p>
+                </div>
+
+                <label className="block text-xs uppercase tracking-widest text-olive-300 mb-1">
+                  Username or Email
+                </label>
+                <div className="relative mb-6">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
+                  <input
+                    required
+                    autoFocus
+                    type="text"
+                    className="input-field pl-9"
+                    value={resetIdentifier}
+                    onChange={(e) => setResetIdentifier(e.target.value)}
+                    placeholder="e.g. armory.custodian or armory@10rcdg.mil.ph"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="btn-primary w-full"
+                >
+                  {forgotLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Request Recovery Code
+                </button>
+
+                <p className="mt-6 text-center text-[11px] text-steel-500">
+                  Secured via cryptographic one-time token · 15 minute expiration
+                </p>
+              </motion.form>
+            )}
+
+            {/* VIEW 3: FORGOT PASSWORD - STEP 2 (VERIFY CODE & SET NEW PASSWORD) */}
+            {mode === "forgot_reset" && (
+              <motion.form
+                key="forgot-reset-form"
+                onSubmit={submitResetPassword}
+                initial={{ opacity: 0, x: 16 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -16 }}
+                transition={{ duration: 0.25 }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setMode("forgot_request")}
+                  className="inline-flex items-center gap-1.5 text-xs text-steel-400 hover:text-olive-300 transition-colors mb-3 focus:outline-none"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  <span>Change Identifier</span>
+                </button>
+
+                <div className="mb-4">
+                  <h2 className="text-2xl font-bold text-olive-50">Set New Password</h2>
+                  <p className="text-xs text-steel-300 mt-1">
+                    Verification code dispatched to{" "}
+                    <span className="font-mono text-olive-200">{maskedEmail || resetIdentifier}</span>.
+                  </p>
+                </div>
+
+                {/* Dev/Demo Environment Helper */}
+                {devCode && (
+                  <div className="mb-4 p-2.5 rounded-lg border border-olive-500/40 bg-olive-950/50 text-xs text-olive-200 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-olive-400 shrink-0" />
+                      <span>
+                        Demo code: <strong className="font-mono tracking-widest text-olive-100">{devCode}</strong>
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setResetCode(devCode)}
+                      className="text-[11px] font-semibold text-olive-300 hover:text-olive-100 underline ml-2"
+                    >
+                      Auto-fill
+                    </button>
+                  </div>
+                )}
+
+                {/* 6-digit Code Input */}
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs uppercase tracking-widest text-olive-300">
+                    6-Digit Code
+                  </label>
+                  <button
+                    type="button"
+                    disabled={resendCooldown > 0 || forgotLoading}
+                    onClick={handleResendCode}
+                    className="text-[11px] text-olive-400 hover:text-olive-200 disabled:opacity-40 disabled:hover:text-olive-400 transition-colors focus:outline-none"
+                  >
+                    {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : "Resend code"}
+                  </button>
+                </div>
+                <div className="relative mb-4">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
+                  <input
+                    required
+                    autoFocus
+                    maxLength={6}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    className="input-field pl-9 font-mono tracking-widest text-sm"
+                    value={resetCode}
+                    onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="123456"
+                  />
+                </div>
+
+                {/* New Password Input */}
+                <label className="block text-xs uppercase tracking-widest text-olive-300 mb-1">
+                  New Password
+                </label>
+                <div className="relative mb-4">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
+                  <input
+                    required
+                    type={showNewPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    className="input-field pl-9 pr-10 text-sm"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Min. 10 characters"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    tabIndex={-1}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 hover:text-olive-300 transition-colors p-1"
+                    aria-label={showNewPassword ? "Hide password" : "Show password"}
+                  >
+                    {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+
+                {/* Confirm Password Input */}
+                <label className="block text-xs uppercase tracking-widest text-olive-300 mb-1">
+                  Confirm New Password
+                </label>
+                <div className="relative mb-6">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
+                  <input
+                    required
+                    type={showConfirmPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    className="input-field pl-9 pr-10 text-sm"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    tabIndex={-1}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 hover:text-olive-300 transition-colors p-1"
+                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="btn-primary w-full"
+                >
+                  {forgotLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Update Password & Sign In
+                </button>
+
+                <div className="mt-4 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setMode("login")}
+                    className="text-xs text-steel-400 hover:text-olive-300 transition-colors"
+                  >
+                    Cancel and return to Sign In
+                  </button>
+                </div>
+              </motion.form>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   );

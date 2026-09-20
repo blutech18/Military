@@ -170,7 +170,10 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    'secure' => env(
+        'SESSION_SECURE_COOKIE',
+        str_starts_with((string) env('APP_URL', ''), 'https://')
+    ),
 
     /*
     |--------------------------------------------------------------------------

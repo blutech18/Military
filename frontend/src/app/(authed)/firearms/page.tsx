@@ -120,7 +120,7 @@ export default function FirearmsPage() {
   );
 }
 
-/* ────────────── Register Firearm Modal ────────────── */
+/* -------------- Register Firearm Modal -------------- */
 function RegisterFirearmModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [form, setForm] = useState({
     category_id: 1,

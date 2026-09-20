@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             FirearmSeeder::class,
             OperationalDataSeeder::class,
+            MaintenanceSeeder::class,
         ]);
     }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\FirearmEquipment;
 use App\Models\Notification;
+use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\AuditLogger;
@@ -15,7 +16,10 @@ class TransactionController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        $isPersonnel = $request->user()->hasRole(Role::PERSONNEL);
+
         $q = Transaction::with(['firearm.category', 'user', 'authorizer'])
+            ->when($isPersonnel, fn($query) => $query->where('user_id', $request->user()->user_id))
             ->when($request->filled('status'), fn($qq) => $qq->where('status', $request->string('status')))
             ->when($request->filled('user_id'), fn($qq) => $qq->where('user_id', $request->integer('user_id')))
             ->when($request->filled('equipment_id'), fn($qq) => $qq->where('equipment_id', $request->integer('equipment_id')))
@@ -24,9 +28,19 @@ class TransactionController extends Controller
         return response()->json($q->paginate($request->integer('per_page', 15)));
     }
 
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
-        return response()->json(Transaction::with(['firearm.category', 'user', 'authorizer', 'gpsLogs'])->findOrFail($id));
+        $isPersonnel = $request->user()->hasRole(Role::PERSONNEL);
+        $relations = ['firearm.category', 'user', 'authorizer'];
+        if (! $isPersonnel) {
+            $relations[] = 'gpsLogs';
+        }
+
+        $transaction = Transaction::with($relations)
+            ->when($isPersonnel, fn($query) => $query->where('user_id', $request->user()->user_id))
+            ->findOrFail($id);
+
+        return response()->json($transaction);
     }
 
     /**

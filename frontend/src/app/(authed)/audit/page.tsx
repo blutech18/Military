@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { fmtDate } from "@/lib/utils";
+import { humanizeAuditAction } from "@/lib/audit";
 import { Lock, ChevronLeft, ChevronRight } from "lucide-react";
 import { DataError } from "@/components/ui/data-error";
 
@@ -37,7 +38,11 @@ export default function AuditPage() {
         <div className="mb-3 flex gap-2">
           <select className="input-field max-w-xs" value={action} onChange={(e) => handleActionChange(e.target.value)}>
             <option value="">All actions</option>
-            {actions?.map((a: string) => <option key={a} value={a}>{a}</option>)}
+            {actions?.map((a: string) => (
+              <option key={a} value={a}>
+                {humanizeAuditAction(a)}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -49,7 +54,7 @@ export default function AuditPage() {
                 <th className="text-center">Actor</th>
                 <th className="text-center">Role</th>
                 <th className="text-center">Action</th>
-                <th className="text-center">Description</th>
+                <th className="text-center px-3">Description</th>
                 <th className="text-center">IP</th>
                 <th className="text-center">Firearm</th>
               </tr>
@@ -62,13 +67,19 @@ export default function AuditPage() {
               )}
               {data?.data?.map((row: any) => (
                 <tr key={row.log_id} className="border-t border-steel-800/50 hover:bg-steel-800/20 transition-colors">
-                  <td className="text-xs text-steel-300 py-2.5 font-mono">{fmtDate(row.created_at)}</td>
-                  <td className="text-center text-olive-100 text-xs">{row.user?.username ?? "system"}</td>
-                  <td className="text-center text-xs text-steel-400">{row.role ?? "—"}</td>
-                  <td className="text-center"><span className="pill pill-tactical">{row.action}</span></td>
-                  <td className="text-center text-xs text-steel-200 max-w-md truncate">{row.description}</td>
-                  <td className="text-center font-mono text-xs text-steel-500">{row.ip_address}</td>
-                  <td className="text-center font-mono text-xs text-steel-400">{row.firearm?.serial_number ?? "—"}</td>
+                  <td className="text-xs text-steel-300 py-2.5 font-mono whitespace-nowrap">{fmtDate(row.created_at)}</td>
+                  <td className="text-center text-olive-100 text-xs font-medium whitespace-nowrap">{row.user?.username ?? "system"}</td>
+                  <td className="text-center text-xs text-steel-400 whitespace-nowrap">{row.role ?? "—"}</td>
+                  <td className="text-center whitespace-nowrap">
+                    <span className="pill pill-tactical text-[10px]">
+                      {humanizeAuditAction(row.action)}
+                    </span>
+                  </td>
+                  <td className="text-center text-xs text-steel-200 max-w-md px-3 py-2 leading-relaxed truncate" title={row.description}>
+                    {row.description}
+                  </td>
+                  <td className="text-center font-mono text-xs text-steel-500 whitespace-nowrap">{row.ip_address}</td>
+                  <td className="text-center font-mono text-xs text-steel-400 whitespace-nowrap">{row.firearm?.serial_number ?? "—"}</td>
                 </tr>
               ))}
             </tbody>

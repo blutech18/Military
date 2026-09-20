@@ -61,7 +61,7 @@ export default function AuthedLayout({ children }: { children: React.ReactNode }
       <Sidebar mobileOpen={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Topbar onMenuClick={() => setMobileMenuOpen(true)} />
-        <main className="flex-1 overflow-y-auto px-4 lg:px-8 py-6 animate-fade-in">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-6 lg:px-8 py-6 animate-fade-in">
           {children}
         </main>
       </div>

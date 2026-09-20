@@ -2,7 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\EquipmentCategory;
 use App\Models\FirearmEquipment;
+use App\Models\Role;
+use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -66,11 +69,21 @@ class FirearmTest extends TestCase
         }
     }
 
+    /**
+     * Resolve a real category id. Never hard-code 1: MySQL does not roll back
+     * auto-increment counters when a test transaction rolls back, so seeded ids
+     * shift between tests.
+     */
+    private function categoryId(): int
+    {
+        return (int) EquipmentCategory::query()->value('category_id');
+    }
+
     public function test_create_firearm_as_admin(): void
     {
         $this->actAsAdmin();
         $response = $this->postJson('/api/v1/firearms', [
-            'category_id'      => 1,
+            'category_id'      => $this->categoryId(),
             'serial_number'    => 'TEST-001',
             'model'            => 'Test Rifle',
             'manufacturer'     => 'Test Mfg',
@@ -88,7 +101,7 @@ class FirearmTest extends TestCase
     {
         $this->actAsPersonnel();
         $response = $this->postJson('/api/v1/firearms', [
-            'category_id'      => 1,
+            'category_id'      => $this->categoryId(),
             'serial_number'    => 'TEST-002',
             'model'            => 'Test',
             'manufacturer'     => 'Test',
@@ -132,6 +145,18 @@ class FirearmTest extends TestCase
             ->assertJsonFragment(['serial_number' => $firearm->serial_number]);
     }
 
+    public function test_raw_serial_lookup(): void
+    {
+        $this->actAsAdmin();
+        $firearm = FirearmEquipment::first();
+
+        // Plain raw serial number string (barcode wedge / manual entry)
+        $response = $this->postJson('/api/v1/firearms/lookup', ['qr_payload' => $firearm->serial_number]);
+
+        $response->assertOk()
+            ->assertJsonFragment(['serial_number' => $firearm->serial_number]);
+    }
+
     public function test_categories_endpoint(): void
     {
         $this->actAsAdmin();
@@ -149,5 +174,58 @@ class FirearmTest extends TestCase
 
         $response = $this->deleteJson("/api/v1/firearms/{$firearm->equipment_id}");
         $response->assertStatus(422);
+    }
+
+    public function test_personnel_firearm_reads_are_limited_to_current_assignments(): void
+    {
+        $personnel = User::where('username', 'pvt.dela.cruz')->firstOrFail();
+        $otherPersonnel = User::where('username', 'cpl.santos')->firstOrFail();
+        $authorizer = User::where('username', 'armory.custodian')->firstOrFail();
+        $firearms = FirearmEquipment::where('availability_status', FirearmEquipment::STATUS_AVAILABLE)
+            ->limit(2)
+            ->get();
+        $ownFirearm = $firearms[0];
+        $otherFirearm = $firearms[1];
+
+        Transaction::create([
+            'equipment_id' => $ownFirearm->equipment_id,
+            'user_id' => $personnel->user_id,
+            'authorized_by' => $authorizer->user_id,
+            'checkout_at' => now(),
+            'expected_return_at' => now()->addHours(4),
+            'purpose' => Transaction::PURPOSE_OPERATION,
+            'status' => Transaction::STATUS_OVERDUE,
+            'condition_on_issue' => FirearmEquipment::CONDITION_GOOD,
+            'gps_tracking_enabled' => true,
+        ]);
+        Transaction::create([
+            'equipment_id' => $otherFirearm->equipment_id,
+            'user_id' => $otherPersonnel->user_id,
+            'authorized_by' => $authorizer->user_id,
+            'checkout_at' => now(),
+            'expected_return_at' => now()->addHours(4),
+            'purpose' => Transaction::PURPOSE_OPERATION,
+            'status' => Transaction::STATUS_ACTIVE,
+            'condition_on_issue' => FirearmEquipment::CONDITION_GOOD,
+            'gps_tracking_enabled' => true,
+        ]);
+        $ownFirearm->update(['availability_status' => FirearmEquipment::STATUS_OVERDUE]);
+        $otherFirearm->update(['availability_status' => FirearmEquipment::STATUS_CHECKED_OUT]);
+
+        Sanctum::actingAs($personnel, [Role::PERSONNEL]);
+
+        $list = $this->getJson('/api/v1/firearms')->assertOk();
+        $ids = collect($list->json('data'))->pluck('equipment_id');
+        $this->assertTrue($ids->contains($ownFirearm->equipment_id));
+        $this->assertFalse($ids->contains($otherFirearm->equipment_id));
+
+        $this->getJson("/api/v1/firearms/{$ownFirearm->equipment_id}")
+            ->assertOk()
+            ->assertJsonMissingPath('transactions');
+        $this->getJson("/api/v1/firearms/{$otherFirearm->equipment_id}")->assertNotFound();
+        $this->get("/api/v1/firearms/{$otherFirearm->equipment_id}/qr")->assertNotFound();
+        $this->postJson('/api/v1/firearms/lookup', [
+            'qr_payload' => json_encode($otherFirearm->qrPayload()),
+        ])->assertNotFound();
     }
 }

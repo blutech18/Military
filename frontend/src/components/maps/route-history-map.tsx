@@ -3,7 +3,11 @@
 import { MapContainer, TileLayer, Polyline, Marker, Popup, ZoomControl, Circle, useMap } from "react-leaflet";
 import { useEffect, useMemo } from "react";
 import L from "leaflet";
-import { fmtRelative } from "@/lib/utils";
+import { MapPin } from "lucide-react";
+import { fmtRelative, cn } from "@/lib/utils";
+import { useMapMountKey } from "./use-map-mount-key";
+import { MapResizeObserver } from "./map-resize-observer";
+import { TILE_ATTRIBUTION, TILE_DARKEN_CLASS, TILE_MAX_ZOOM, TILE_URL } from "./tiles";
 
 // Fix default Leaflet icon paths
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -61,6 +65,7 @@ interface Props {
 }
 
 export function RouteHistoryMap({ history, geofences = [] }: Props) {
+  const mapKey = useMapMountKey();
   const lat = Number(process.env.NEXT_PUBLIC_DEFAULT_MAP_CENTER_LAT ?? 8.484460);
   const lon = Number(process.env.NEXT_PUBLIC_DEFAULT_MAP_CENTER_LON ?? 124.657010);
 
@@ -72,18 +77,25 @@ export function RouteHistoryMap({ history, geofences = [] }: Props) {
   const first = history.length > 0 ? history[history.length - 1] : null; // oldest
   const last = history.length > 0 ? history[0] : null; // newest (sorted desc)
 
+  if (!mapKey) {
+    return (
+      <div className="flex h-full w-full items-center justify-center text-xs text-steel-400">
+        Initialising map…
+      </div>
+    );
+  }
+
   return (
     <MapContainer
+      key={mapKey}
       center={positions.length > 0 ? positions[0] : [lat, lon]}
       zoom={15}
       zoomControl={false}
-      className="h-full w-full"
+      className={`h-full w-full ${TILE_DARKEN_CLASS}`}
       scrollWheelZoom
     >
-      <TileLayer
-        attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-      />
+      <MapResizeObserver />
+      <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} maxZoom={TILE_MAX_ZOOM} />
       <ZoomControl position="topright" />
 
       {geofences.map((g) => (
@@ -93,7 +105,12 @@ export function RouteHistoryMap({ history, geofences = [] }: Props) {
           radius={Number(g.radius_meters)}
           pathOptions={{ color: g.is_armory ? "#aeb771" : "#60a5fa", weight: 1.2, fillOpacity: 0.04, dashArray: "4 6" }}
         >
-          <Popup><strong>{g.location_name}</strong></Popup>
+          <Popup className="tactical-popup">
+            <div className="w-[190px] p-2.5 text-steel-100 font-sans text-xs select-text">
+              <p className="font-bold text-sm text-olive-100 truncate">{g.location_name}</p>
+              <p className="text-[10px] text-steel-400 mt-0.5">{g.radius_meters}m radius {g.is_armory ? "· Armory Facility" : "· Geofence Zone"}</p>
+            </div>
+          </Popup>
         </Circle>
       ))}
 
@@ -106,18 +123,34 @@ export function RouteHistoryMap({ history, geofences = [] }: Props) {
 
       {first && (
         <Marker position={[Number(first.latitude), Number(first.longitude)]} icon={startIcon}>
-          <Popup>
-            <strong>Start</strong><br />
-            <span style={{ fontSize: 11 }}>{fmtRelative(first.captured_at)}</span>
+          <Popup className="tactical-popup">
+            <div className="w-[190px] p-2.5 text-steel-100 font-sans text-xs select-text">
+              <div className="flex items-center gap-1.5 text-emerald-400 font-bold mb-1">
+                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                <span>Route Start</span>
+              </div>
+              <p className="text-[10px] text-steel-300 font-mono">
+                {Number(first.latitude).toFixed(5)}, {Number(first.longitude).toFixed(5)}
+              </p>
+              <p className="text-[10px] text-steel-400 mt-1">{fmtRelative(first.captured_at)}</p>
+            </div>
           </Popup>
         </Marker>
       )}
 
       {last && last !== first && (
         <Marker position={[Number(last.latitude), Number(last.longitude)]} icon={endIcon}>
-          <Popup>
-            <strong>Latest</strong><br />
-            <span style={{ fontSize: 11 }}>{fmtRelative(last.captured_at)}</span>
+          <Popup className="tactical-popup">
+            <div className="w-[190px] p-2.5 text-steel-100 font-sans text-xs select-text">
+              <div className="flex items-center gap-1.5 text-red-400 font-bold mb-1">
+                <MapPin className="h-3.5 w-3.5 shrink-0" />
+                <span>Latest Fix</span>
+              </div>
+              <p className="text-[10px] text-steel-300 font-mono">
+                {Number(last.latitude).toFixed(5)}, {Number(last.longitude).toFixed(5)}
+              </p>
+              <p className="text-[10px] text-steel-400 mt-1">{fmtRelative(last.captured_at)}</p>
+            </div>
           </Popup>
         </Marker>
       )}

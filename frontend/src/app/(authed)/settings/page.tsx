@@ -169,7 +169,7 @@ function PasswordChangeSection() {
   );
 }
 
-/* ────────────── Reusable Confirmation Modal ────────────── */
+/* -------------- Reusable Confirmation Modal -------------- */
 function ConfirmModal({
   open,
   onClose,
@@ -233,7 +233,7 @@ function ConfirmModal({
   );
 }
 
-/* ────────────── TOTP Section (System-wide, Admin Only) ────────────── */
+/* -------------- TOTP Section (System-wide, Admin Only) -------------- */
 function TotpSection({ settings, loading: parentLoading }: { settings?: SystemSettings; loading: boolean }) {
   const qc = useQueryClient();
   const enabled = settings?.totp_required ?? null;
@@ -322,7 +322,7 @@ function TotpSection({ settings, loading: parentLoading }: { settings?: SystemSe
   );
 }
 
-/* ────────────── Biometric Section (System-wide, Admin Only) ────────────── */
+/* -------------- Biometric Section (System-wide, Admin Only) -------------- */
 function BiometricSection({ settings, loading: parentLoading }: { settings?: SystemSettings; loading: boolean }) {
   const qc = useQueryClient();
   const enabled = settings?.biometric_required ?? null;
@@ -411,7 +411,7 @@ function BiometricSection({ settings, loading: parentLoading }: { settings?: Sys
   );
 }
 
-/* ────────────── Session Auto-Expiry Section (Admin Only) ────────────── */
+/* -------------- Session Auto-Expiry Section (Admin Only) -------------- */
 function SessionExpirySection({ settings, loading: parentLoading }: { settings?: SystemSettings; loading: boolean }) {
   const qc = useQueryClient();
   const enabled = settings?.session_expiry_enabled ?? null;

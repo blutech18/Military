@@ -207,7 +207,7 @@ class ReportController extends Controller
         return match ($format) {
             'csv'   => $this->csv($rows, $name, $meta['columns']),
             'xlsx'  => $this->xlsx($rows, $name, $meta),
-            'pdf'   => $this->pdf($rows, $name, $meta),
+            'pdf'   => $this->pdf($request, $rows, $name, $meta),
             default => response()->json(['title' => $meta['title'], 'rows' => $rows]),
         };
     }
@@ -254,14 +254,18 @@ class ReportController extends Controller
         ]);
     }
 
-    protected function pdf($rows, string $name, array $meta)
+    protected function pdf(Request $request, $rows, string $name, array $meta)
     {
         $pdf = Pdf::loadView('reports.generic', [
-            'title'    => $meta['title'],
-            'columns'  => $meta['columns'],
-            'rows'     => $rows,
+            'title'       => $meta['title'],
+            'columns'     => $meta['columns'],
+            'rows'        => $rows,
             'generatedAt' => now()->format('Y-m-d H:i:s'),
         ])->setPaper('a4', 'landscape');
+
+        if ($request->query('disposition') === 'inline' || $request->boolean('inline')) {
+            return $pdf->stream("{$name}_" . now()->format('Ymd_His') . '.pdf');
+        }
 
         return $pdf->download("{$name}_" . now()->format('Ymd_His') . '.pdf');
     }

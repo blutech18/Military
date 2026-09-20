@@ -107,7 +107,7 @@ export default function TotpPage() {
     inputs.current[Math.min(digits.length, 5)]?.focus();
   }
 
-  /* ── Shared QR + Secret card ── */
+  /* -- Shared QR + Secret card -- */
   function QrSetupCard({ data }: { data: SetupResponse }) {
     return (
       <>

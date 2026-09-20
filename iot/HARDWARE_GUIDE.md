@@ -186,47 +186,48 @@ Go to **Tools → Manage Libraries** (or Sketch → Include Library → Manage L
 
 ## 6. CONFIGURING THE FIRMWARE
 
-Open the file `iot/firmware/firmware.ino` in Arduino IDE.
+Open the sketch `iot/firmware/armory_tracker/armory_tracker.ino` in Arduino IDE.
 
-### Edit these constants at the top:
+Settings live in a separate `config.h` so your Wi-Fi password and shared secret are
+never committed to git. Create it once by copying the template:
+
+```powershell
+cd iot\firmware\armory_tracker
+Copy-Item config.example.h config.h
+```
+
+### Edit these values in `config.h`:
 
 ```cpp
-// Your WiFi network (the one the ESP32 will connect to)
-const char* WIFI_SSID    = "YourWiFiName";        // ← change this
-const char* WIFI_PASS    = "YourWiFiPassword";    // ← change this
+// Your WiFi network (must be 2.4GHz — ESP32 does not support 5GHz)
+#define WIFI_SSID "YourWiFiName"          // ← change this
+#define WIFI_PASS "YourWiFiPassword"      // ← change this
 
-// Your Laravel backend URL
-// If running on the same computer, use your computer's local IP (not localhost!)
-// Find it with: ipconfig in CMD → look for IPv4 Address (e.g., 192.168.1.100)
-const char* API_URL      = "http://192.168.1.100:8000/api/v1/gps/ingest";  // ← change this
+// Your Laravel backend URL.
+// Use your computer's LAN IP, not localhost — the ESP32 cannot reach localhost.
+// Find it with: ipconfig in CMD → IPv4 Address (e.g., 192.168.1.100)
+#define API_URL "http://192.168.1.100:8000/api/v1/gps/ingest"   // ← change this
 
 // Device identification
-const char* DEVICE_ID    = "ESP32-001-FIREARM-PA-M4-001";  // unique per device
-const int   EQUIPMENT_ID = 1;  // must match a firearm_equipment.equipment_id in your DB
+#define DEVICE_ID "ESP32-001"   // unique per tracker
+#define EQUIPMENT_ID 1          // must match firearm_equipment.equipment_id
 
-// HMAC secret — MUST match the IOT_HMAC_SECRET in your Laravel .env file
-const char* HMAC_SECRET  = "CHANGE_ME_iot_shared_secret_at_least_32_chars_long_!!";  // ← change this
+// MUST match IOT_HMAC_SECRET in backend/.env
+#define HMAC_SECRET "CHANGE_ME_iot_shared_secret_at_least_32_chars_long_!!"  // ← change this
 ```
 
-### For HTTP (development/demo without SSL):
+### Choosing HTTP or HTTPS
 
-Since you're running on XAMPP locally without HTTPS, change the `sendPayload` function to use regular HTTP instead of HTTPS:
+No code editing is needed. Flip one switch in `config.h`:
 
-Replace this section in the `sendPayload` function:
 ```cpp
-WiFiClientSecure client;
-client.setCACert(ROOT_CA_CERT);
+#define USE_HTTPS 0   // 0 = plain HTTP for local XAMPP / php artisan serve
+                      // 1 = HTTPS for deployment
 ```
 
-With this:
-```cpp
-WiFiClient client;  // Use regular HTTP for local development
-```
-
-And add this include at the top (if not already there):
-```cpp
-#include <WiFiClient.h>
-```
+When `USE_HTTPS` is `1`, paste your CA into `ROOT_CA_CERT`. For a first lab test over
+TLS without a proper CA you may set `ALLOW_INSECURE_TLS 1`, which skips certificate
+validation — never use that outside the lab.
 
 ### Finding Your Computer's IP Address
 
@@ -247,6 +248,11 @@ IOT_HMAC_SECRET=CHANGE_ME_iot_shared_secret_at_least_32_chars_long_!!
 ---
 
 ## 7. UPLOADING TO ESP32
+
+> **Before uploading:** open `armory_tracker.ino` specifically. Arduino compiles every
+> `.ino` file inside a sketch folder as one program, so never place a second sketch
+> beside it. The earlier `firmware.ino` and `firmware_dev.ino` are kept in
+> `firmware/reference/` with a `.txt` extension for exactly this reason.
 
 1. Make sure ESP32 is connected via USB
 2. Make sure the correct Board and Port are selected in Tools menu
@@ -314,7 +320,13 @@ If you don't have the hardware yet, or want to test the software side first, use
 
 4. Open your frontend dashboard — you should see the firearm moving on the live map!
 
-> **Important:** For the simulator to work, the firearm must be in "Checked Out" status (issue it to someone via the Transactions page first).
+> **Important:** the API accepts a fix only when the firearm is genuinely issued.
+> Before running the simulator, issue the firearm with the matching `equipment_id`
+> from the Transactions page, keep that transaction **Active** or **Overdue**, and
+> keep **GPS tracking enabled** on it. Otherwise every request returns `409`.
+>
+> View the live map with a staff account (Administrator, Command Officer, S4 Officer,
+> or Armory Custodian). GPS endpoints return `403` for Personnel accounts.
 
 ---
 
@@ -322,12 +334,18 @@ If you don't have the hardware yet, or want to test the software side first, use
 
 ### Pre-flight Checklist
 
-- [ ] ESP32 + GPS module wired correctly
+- [ ] ESP32 + GPS module wired correctly (TX/RX crossed, VCC on 3V3)
+- [ ] `config.h` created from `config.example.h` and filled in
 - [ ] Firmware uploaded with correct WiFi credentials
-- [ ] Laravel backend running (`php artisan serve`)
-- [ ] ESP32 and your computer are on the same WiFi network
-- [ ] A firearm is issued (status = "Checked Out") with matching equipment_id
-- [ ] IOT_HMAC_SECRET matches between firmware and .env
+- [ ] Laravel reachable on the LAN: `php artisan serve --host 0.0.0.0 --port 8000`
+- [ ] Windows Firewall allows inbound port 8000
+- [ ] ESP32 and your computer are on the same 2.4GHz WiFi network
+- [ ] `API_URL` uses the computer's LAN IP, not localhost
+- [ ] The firearm with the matching `equipment_id` has an **Active** or **Overdue**
+      transaction with **GPS tracking enabled**
+- [ ] `HMAC_SECRET` matches `IOT_HMAC_SECRET` exactly (run `php artisan config:clear`
+      after editing `.env`)
+- [ ] GPS antenna faces the sky, device is outdoors
 
 ### Test Procedure
 
@@ -382,6 +400,27 @@ Dashboard:
 - HMAC_SECRET in firmware must EXACTLY match IOT_HMAC_SECRET in .env
 - No extra spaces or newlines
 - Both must be the same string, character for character
+- Run `php artisan config:clear` after changing `.env`
+
+### POST returns 409 (Conflict)
+Three separate causes, all reported on this code:
+- The firearm has no **Active** or **Overdue** transaction → issue it first
+- That transaction has **GPS tracking disabled** → re-enable it
+- The fix is a **duplicate or out of order** for this `device_id`. Timestamps have
+  1-second resolution and must strictly increase, so never run two trackers with the
+  same `DEVICE_ID`, and keep `TX_INTERVAL_MS` at 1000 or more.
+
+### POST returns 422 (Timestamp rejected)
+- The device clock is unsynced. Wait for a real GPS fix so UTC date/time is valid.
+- A queued fix aged past `ARMORY_GPS_MAX_AGE_SECONDS` (default 300 s) and is refused.
+  Keep `MAX_FIX_AGE_SECONDS` in `config.h` below the server value.
+
+### POST returns 503
+- `IOT_HMAC_SECRET` is empty on the server. Set it in `backend/.env`.
+
+### Live map shows nothing but POSTs return 200
+- You are signed in as **Personnel**. GPS endpoints are staff-only and return `403`.
+  Use an Administrator, Command Officer, S4 Officer, or Armory Custodian account.
 
 ### POST returns connection refused
 - Make sure `php artisan serve` is running
@@ -436,6 +475,7 @@ For a truly portable tracker attached to a firearm:
 ┌─────────────────────────────────────────────────────┐
 │  ArmoryDB GPS Tracker — Quick Reference             │
 ├─────────────────────────────────────────────────────┤
+│  Sketch:    firmware/armory_tracker/                │
 │  Board:     ESP32 Dev Module                        │
 │  GPS:       GY-NEO6MV2 on UART2 (GPIO16/17)        │
 │  Baud:      9600 (GPS) / 115200 (Serial Monitor)   │
@@ -443,7 +483,7 @@ For a truly portable tracker attached to a firearm:
 │  Protocol:  HTTP(S) POST + HMAC-SHA256 signature    │
 │  Endpoint:  /api/v1/gps/ingest                      │
 │  Header:    X-Armory-Signature: <hex hmac>          │
-│  Offline:   Buffers 32 fixes in NVS flash           │
+│  Offline:   8 fixes in RAM, dropped once too stale  │
 │  Power:     USB 5V or 3.7V Li-Po via TP4056         │
 └─────────────────────────────────────────────────────┘
 ```
@@ -467,13 +507,16 @@ For a truly portable tracker attached to a firearm:
          ↓
 7. ESP32 POSTs to Laravel /api/v1/gps/ingest via WiFi
          ↓
-8. Laravel verifies HMAC signature
+8. Laravel verifies the HMAC signature
          ↓
-9. Laravel stores in gps_logs table
+9. Laravel checks the timestamp is fresh and newer than the last fix
          ↓
-10. Laravel checks geofence boundaries
+10. Laravel confirms an Active/Overdue transaction with GPS tracking enabled
          ↓
-11. Frontend live map updates (polls every 30s)
+11. Laravel evaluates geofences and stores the row in gps_logs
          ↓
-12. If outside geofence → critical alert notification
+12. Frontend live map updates for staff roles (poll + SSE)
+         ↓
+13. On entering an unauthorised area → one critical alert to the authorising officer
+    (repeated outside fixes do not re-alert)
 ```

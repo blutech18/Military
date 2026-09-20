@@ -18,9 +18,15 @@ use Illuminate\Support\Facades\Route;
 |------------------------------------------------------------------------------
 | ArmoryDB · REST API · /api/v1
 |------------------------------------------------------------------------------
-|  All endpoints are protected by the strict 5-req/s rate limit.
-|  Authenticated endpoints additionally require a Sanctum token + role/clearance.
+|  User endpoints are protected by the strict 5-req/s rate limit.
+|  IoT ingestion uses a dedicated 60-req/s bucket.
 */
+
+// IoT GPS ingest has its own higher bucket and is not nested under the user API limiter.
+Route::prefix('v1')->group(function () {
+    Route::post('gps/ingest', [GpsController::class, 'ingest'])
+        ->middleware('rate.strict:60');
+});
 
 Route::middleware('rate.strict')->prefix('v1')->group(function () {
 
@@ -28,14 +34,12 @@ Route::middleware('rate.strict')->prefix('v1')->group(function () {
     Route::prefix('auth')->group(function () {
         Route::get('requirements',        [AuthController::class, 'requirements']);
         Route::post('login',             [AuthController::class, 'login']);
+        Route::post('forgot-password',   [AuthController::class, 'forgotPassword']);
+        Route::post('reset-password',    [AuthController::class, 'resetPassword']);
         Route::post('totp/setup',        [AuthController::class, 'totpSetup']);
         Route::post('totp/verify',       [AuthController::class, 'totpVerify']);
         Route::post('biometric/verify',  [AuthController::class, 'biometricVerify']);
     });
-
-    // ----- IoT GPS ingest (HMAC-signed, no Sanctum) -----
-    Route::post('gps/ingest', [GpsController::class, 'ingest'])
-        ->middleware('rate.strict:60'); // GPS devices may burst slightly higher
 
     // ----- Authenticated routes -----
     Route::middleware('auth:sanctum')->group(function () {
@@ -50,12 +54,19 @@ Route::middleware('rate.strict')->prefix('v1')->group(function () {
         Route::post('auth/enable-biometric',[AuthController::class, 'enableBiometric']);
 
         // Global search
-        Route::get('search', [DashboardController::class, 'search']);
+        Route::get('search', [DashboardController::class, 'search'])
+            ->middleware('role:Administrator,Command Officer,S4 Officer,Armory Custodian,Personnel');
 
-        // Dashboard / live map / notifications — accessible to all authenticated roles
-        Route::get('dashboard/summary', [DashboardController::class, 'summary']);
-        Route::get('gps/live',          [GpsController::class, 'liveMap']);
-        Route::get('gps/history/{equipmentId}', [GpsController::class, 'history']);
+        // Dashboard / notifications — accessible to known authenticated roles
+        Route::get('dashboard/summary', [DashboardController::class, 'summary'])
+            ->middleware('role:Administrator,Command Officer,S4 Officer,Armory Custodian,Personnel');
+
+        // Sensitive location data — operational staff only
+        Route::middleware('role:Administrator,Command Officer,S4 Officer,Armory Custodian')->group(function () {
+            Route::get('gps/live', [GpsController::class, 'liveMap']);
+            Route::get('gps/history/{equipmentId}', [GpsController::class, 'history']);
+            Route::get('locations', [GpsLocationController::class, 'index']);
+        });
 
         Route::get('notifications',                  [NotificationController::class, 'index']);
         Route::get('notifications/unread',           [NotificationController::class, 'unread']);
@@ -63,13 +74,16 @@ Route::middleware('rate.strict')->prefix('v1')->group(function () {
         Route::post('notifications/mark-all-read',   [NotificationController::class, 'markAllRead']);
 
         // Equipment categories
-        Route::get('categories', [FirearmController::class, 'categories']);
+        Route::get('categories', [FirearmController::class, 'categories'])
+            ->middleware('role:Administrator,Command Officer,S4 Officer,Armory Custodian,Personnel');
 
-        // Firearms
-        Route::get('firearms',                  [FirearmController::class, 'index']);
-        Route::get('firearms/{id}',             [FirearmController::class, 'show']);
-        Route::get('firearms/{id}/qr',          [FirearmController::class, 'qrCode']);
-        Route::post('firearms/lookup',          [FirearmController::class, 'lookup']);
+        // Firearm reads default-deny unknown roles; Personnel are ownership-scoped in the controller.
+        Route::middleware('role:Administrator,Command Officer,S4 Officer,Armory Custodian,Personnel')->group(function () {
+            Route::get('firearms',         [FirearmController::class, 'index']);
+            Route::get('firearms/{id}',    [FirearmController::class, 'show']);
+            Route::get('firearms/{id}/qr', [FirearmController::class, 'qrCode']);
+            Route::post('firearms/lookup', [FirearmController::class, 'lookup']);
+        });
 
         // S4 Officer / Armory Custodian / Administrator can mutate inventory
         Route::middleware('role:Administrator,S4 Officer,Armory Custodian')->group(function () {
@@ -82,13 +96,15 @@ Route::middleware('rate.strict')->prefix('v1')->group(function () {
             Route::post('maintenance',               [MaintenanceController::class, 'store']);
         });
 
-        Route::get('transactions',         [TransactionController::class, 'index']);
-        Route::get('transactions/{id}',    [TransactionController::class, 'show']);
+        Route::middleware('role:Administrator,Command Officer,S4 Officer,Armory Custodian,Personnel')->group(function () {
+            Route::get('transactions',      [TransactionController::class, 'index']);
+            Route::get('transactions/{id}', [TransactionController::class, 'show']);
+        });
 
-        Route::get('maintenance',          [MaintenanceController::class, 'index']);
+        Route::get('maintenance', [MaintenanceController::class, 'index'])
+            ->middleware('role:Administrator,Command Officer,S4 Officer,Armory Custodian');
 
-        // Geofences / locations — admin & S4
-        Route::get('locations',            [GpsLocationController::class, 'index']);
+        // Geofence/location writes — admin & S4
         Route::middleware('role:Administrator,S4 Officer')->group(function () {
             Route::post('locations',           [GpsLocationController::class, 'store']);
             Route::patch('locations/{id}',     [GpsLocationController::class, 'update']);
@@ -110,22 +126,30 @@ Route::middleware('rate.strict')->prefix('v1')->group(function () {
             Route::patch('settings',           [SettingsController::class, 'update']);
         });
 
-        // Audit logs — Top Secret clearance only (Admins / Command Officer / S4)
-        Route::middleware('clearance:2')->group(function () {
+        // Audit logs — operational staff with Secret-or-higher clearance
+        Route::middleware([
+            'role:Administrator,Command Officer,S4 Officer,Armory Custodian',
+            'clearance:2',
+        ])->group(function () {
             Route::get('audit-logs',           [AuditLogController::class, 'index']);
             Route::get('audit-logs/actions',   [AuditLogController::class, 'actions']);
         });
 
-        // Reports
-        Route::prefix('reports')->group(function () {
-            Route::get('inventory',                  [ReportController::class, 'inventory']);
-            Route::get('transactions',               [ReportController::class, 'transactions']);
-            Route::get('audit',                      [ReportController::class, 'audit']);
-            Route::get('maintenance',                [ReportController::class, 'maintenance']);
-            Route::get('personnel-assignment',       [ReportController::class, 'personnelAssignment']);
-            Route::get('security-incidents',         [ReportController::class, 'securityIncidents']);
-            Route::get('gps/{equipmentId}',          [ReportController::class, 'gpsHistory']);
-        });
+        // Reports — operational staff only; security-sensitive reports also require Secret clearance
+        Route::prefix('reports')
+            ->middleware('role:Administrator,Command Officer,S4 Officer,Armory Custodian')
+            ->group(function () {
+                Route::get('inventory',                  [ReportController::class, 'inventory']);
+                Route::get('transactions',               [ReportController::class, 'transactions']);
+                Route::get('maintenance',                [ReportController::class, 'maintenance']);
+                Route::get('personnel-assignment',       [ReportController::class, 'personnelAssignment']);
+                Route::get('gps/{equipmentId}',          [ReportController::class, 'gpsHistory']);
+
+                Route::middleware('clearance:2')->group(function () {
+                    Route::get('audit',                  [ReportController::class, 'audit']);
+                    Route::get('security-incidents',     [ReportController::class, 'securityIncidents']);
+                });
+            });
     });
 });
 
@@ -136,11 +160,11 @@ Route::middleware('rate.strict')->prefix('v1')->group(function () {
 Route::prefix('v1')->group(function () {
     // SSE stream — long-lived connection, no per-request rate limit.
     Route::get('gps/iot-stream', [GpsController::class, 'iotStream'])
-        ->middleware('auth.sanctum.query');
+        ->middleware(['auth.sanctum.query', 'role:Administrator,Command Officer,S4 Officer,Armory Custodian']);
 
     // Polling fallback — fits comfortably under a 30 req/s bucket.
     Route::get('gps/iot-status', [GpsController::class, 'iotStatus'])
-        ->middleware(['auth:sanctum', 'rate.strict:30']);
+        ->middleware(['auth:sanctum', 'role:Administrator,Command Officer,S4 Officer,Armory Custodian', 'rate.strict:30']);
 });
 
 Route::get('/health', fn () => response()->json([

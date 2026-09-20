@@ -63,7 +63,66 @@
 
   /* KPI tile */
   .kpi-tile {
-    @apply glass rounded-xl p-4 transition-all hover:border-olive-500/70 hover:shadow-[0_0_24px_rgba(118,128,58,0.25)];
+    @apply glass rounded-xl p-3 sm:p-4 transition-all hover:border-olive-500/70 hover:shadow-[0_0_24px_rgba(118,128,58,0.25)] flex flex-col justify-between min-w-0;
+  }
+
+  /* Container query wrapper for KPI section */
+  .kpi-container {
+    container-type: inline-size;
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Responsive KPI Grids */
+  .kpi-grid {
+    display: grid;
+    width: 100%;
+    gap: 0.75rem;
+  }
+
+  /* 8 tiles (e.g. Administrator Dashboard) */
+  .kpi-grid-8 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  @container (min-width: 520px) {
+    .kpi-grid-8 {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+  @container (min-width: 1200px) {
+    .kpi-grid-8 {
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+    }
+  }
+
+  /* 6 tiles (e.g. Command, S4 Dashboards) */
+  .kpi-grid-6 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  @container (min-width: 500px) {
+    .kpi-grid-6 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  @container (min-width: 920px) {
+    .kpi-grid-6 {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+
+  /* 5 tiles (e.g. Custodian, Personnel Dashboards) */
+  .kpi-grid-5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  @container (min-width: 500px) {
+    .kpi-grid-5 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  @container (min-width: 840px) {
+    .kpi-grid-5 {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
   }
 
   /* Section heading */
@@ -98,12 +157,39 @@
            placeholder:text-steel-400 focus:outline-none focus:ring-2 focus:ring-olive-500/70 focus:border-olive-500/60;
   }
 
-  .leaflet-container { background: #0d1318 !important; }
+  .leaflet-container {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100%;
+    background: #0d1318 !important;
+  }
 
-  .leaflet-popup-content-wrapper,
-  .leaflet-popup-tip {
-    background: #1c2530 !important;
-    color: #e6e9d2 !important;
+  /* Leaflet's default divIcon resembles a toggle/dot. Our SVG marker instead
+   * uses a pointed tip whose iconAnchor is the exact GPS coordinate. */
+  .armory-marker {
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .armory-marker svg {
+    display: block;
+    overflow: visible;
+    filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.65));
+  }
+
+  /*
+   * Renders light OpenStreetMap tiles as a dark basemap without needing a keyed
+   * provider. The filter targets the tile pane only, so markers, geofence
+   * circles, popups and controls keep their intended colours.
+   * Disable with NEXT_PUBLIC_MAP_TILE_DARKEN=false when the provider is already dark.
+   */
+  .map-dark-tiles .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.92) saturate(0.7);
+  }
+
+  /* Section heading */
+  .section-title {
+    @apply text-sm uppercase tracking-[0.18em] text-olive-300 font-semibold;
   }
 }
 
@@ -111,3 +197,110 @@
   .text-balance { text-wrap: balance; }
   .ring-pulse   { animation: pulse-ring 1.6s infinite; }
 }
+
+/* ==========================================================================
+   Tactical Leaflet Dark Theme Overrides
+   Must remain OUTSIDE @layer to override unlayered leaflet.css
+   ========================================================================== */
+
+.leaflet-container .leaflet-popup-content-wrapper,
+.leaflet-popup .leaflet-popup-content-wrapper,
+.leaflet-popup-content-wrapper {
+  background: #131a20 !important;
+  background-color: #131a20 !important;
+  border: 1px solid rgba(174, 183, 113, 0.45) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 14px 30px -4px rgba(0, 0, 0, 0.85), 0 0 10px rgba(0, 0, 0, 0.5) !important;
+  color: #f1f5f9 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.leaflet-container .leaflet-popup-content,
+.leaflet-popup .leaflet-popup-content,
+.leaflet-popup-content {
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.35 !important;
+  color: #f1f5f9 !important;
+  font-family: var(--font-inter), system-ui, -apple-system, sans-serif !important;
+}
+
+.leaflet-container .leaflet-popup-tip-container,
+.leaflet-popup .leaflet-popup-tip-container,
+.leaflet-popup-tip-container {
+  overflow: visible !important;
+  margin-top: -1px !important;
+}
+
+.leaflet-container .leaflet-popup-tip,
+.leaflet-popup .leaflet-popup-tip,
+.leaflet-popup-tip {
+  background: #131a20 !important;
+  background-color: #131a20 !important;
+  border: 1px solid rgba(174, 183, 113, 0.45) !important;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6) !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  top: 12px !important;
+  right: 12px !important;
+  width: 20px !important;
+  height: 20px !important;
+  border-radius: 4px !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #94a3b8 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  font-family: inherit !important;
+  line-height: 1 !important;
+  padding: 0 !important;
+  transition: all 0.15s ease !important;
+  z-index: 30 !important;
+  text-decoration: none !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button span {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Prevent Leaflet default link color (.leaflet-container a { color: #0078A8; }) from affecting popup links */
+.leaflet-container .leaflet-popup a,
+.leaflet-popup a {
+  color: inherit !important;
+  text-decoration: none !important;
+}
+
+.leaflet-container .leaflet-popup a:hover,
+.leaflet-popup a:hover {
+  text-decoration: none !important;
+}
+
+/* Remove html5-qrcode default white square / shaded corners overlay */
+#qr-shaded-region,
+#qr-shaded-region > div,
+#qr-camera-viewport #qr-shaded-region,
+#inventory-qr-reader #qr-shaded-region,
+#qr-reader #qr-shaded-region {
+  display: none !important;
+  border: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+
