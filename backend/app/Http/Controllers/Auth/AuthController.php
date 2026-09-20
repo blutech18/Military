@@ -230,14 +230,13 @@ class AuthController extends Controller
     }
 
     /**
-     * Complete password reset using verification code.
+     * Confirm a password reset 6-digit verification code.
      */
-    public function resetPassword(Request $request): JsonResponse
+    public function verifyResetCode(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'reset_token'           => ['required', 'string'],
-            'code'                  => ['required', 'string', 'size:6'],
-            'new_password'          => ['required', 'string', 'min:10', 'max:200', 'confirmed'],
+            'reset_token' => ['required', 'string'],
+            'code'        => ['required', 'string', 'size:6'],
         ]);
 
         $cacheKey = "password-reset:{$data['reset_token']}";
@@ -246,6 +245,45 @@ class AuthController extends Controller
         if (! $resetData || ! hash_equals((string) $resetData['code'], trim($data['code']))) {
             return response()->json([
                 'message' => 'Invalid or expired verification code.',
+            ], 422);
+        }
+
+        $resetData['verified'] = true;
+        Cache::put($cacheKey, $resetData, now()->addMinutes(15));
+
+        return response()->json([
+            'message'  => 'Verification code confirmed. You may now set your new password.',
+            'verified' => true,
+            'username' => $resetData['username'] ?? null,
+        ]);
+    }
+
+    /**
+     * Complete password reset using verification code or pre-verified reset token.
+     */
+    public function resetPassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'reset_token'           => ['required', 'string'],
+            'code'                  => ['nullable', 'string', 'size:6'],
+            'new_password'          => ['required', 'string', 'min:10', 'max:200', 'confirmed'],
+        ]);
+
+        $cacheKey = "password-reset:{$data['reset_token']}";
+        $resetData = Cache::get($cacheKey);
+
+        if (! $resetData) {
+            return response()->json([
+                'message' => 'Reset session has expired. Please request a new verification code.',
+            ], 422);
+        }
+
+        $isVerified = ($resetData['verified'] ?? false) === true;
+        $codeMatches = ! empty($data['code']) && hash_equals((string) $resetData['code'], trim($data['code']));
+
+        if (! $isVerified && ! $codeMatches) {
+            return response()->json([
+                'message' => 'Invalid or unverified authorization code. Please confirm your code first.',
             ], 422);
         }
 

@@ -35,6 +35,7 @@ Route::middleware('rate.strict')->prefix('v1')->group(function () {
         Route::get('requirements',        [AuthController::class, 'requirements']);
         Route::post('login',             [AuthController::class, 'login']);
         Route::post('forgot-password',   [AuthController::class, 'forgotPassword']);
+        Route::post('verify-reset-code', [AuthController::class, 'verifyResetCode']);
         Route::post('reset-password',    [AuthController::class, 'resetPassword']);
         Route::post('totp/setup',        [AuthController::class, 'totpSetup']);
         Route::post('totp/verify',       [AuthController::class, 'totpVerify']);

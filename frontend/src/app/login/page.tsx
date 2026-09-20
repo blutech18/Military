@@ -14,6 +14,7 @@ import {
   KeyRound,
   ArrowLeft,
   Mail,
+  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -46,6 +47,12 @@ interface ForgotPasswordResponse {
   message: string;
   reset_token: string;
   masked_email: string;
+}
+
+interface VerifyResetCodeResponse {
+  message: string;
+  verified: boolean;
+  username?: string;
 }
 
 interface ResetPasswordResponse {
@@ -100,7 +107,7 @@ async function createRecaptchaToken(action: string): Promise<string> {
   return recaptcha.execute(RECAPTCHA_SITE_KEY, { action });
 }
 
-type AuthMode = "login" | "forgot_request" | "forgot_reset";
+type AuthMode = "login" | "forgot_request" | "forgot_verify" | "forgot_new_password";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -218,7 +225,8 @@ export default function LoginPage() {
       setResetToken(data.reset_token);
       setMaskedEmail(data.masked_email);
       setResendCooldown(60);
-      setMode("forgot_reset");
+      setResetCode("");
+      setMode("forgot_verify");
       toast.success(data.message || "Verification code dispatched.");
     } catch (error: unknown) {
       if (error instanceof AxiosError) {
@@ -231,7 +239,7 @@ export default function LoginPage() {
     }
   }
 
-  // Step 2: Resend code
+  // Resend verification code
   async function handleResendCode() {
     if (resendCooldown > 0 || !resetIdentifier.trim()) return;
     setForgotLoading(true);
@@ -254,14 +262,37 @@ export default function LoginPage() {
     }
   }
 
-  // Step 3: Verify code and set new password
-  async function submitResetPassword(e: React.FormEvent) {
+  // Step 2: Verify 6-digit code before allowing new password input
+  async function submitVerifyCode(e: React.FormEvent) {
     e.preventDefault();
 
     if (!resetCode.trim() || resetCode.trim().length !== 6) {
-      toast.warning("Please enter the 6-digit verification code.");
+      toast.warning("Please enter the complete 6-digit verification code.");
       return;
     }
+
+    setForgotLoading(true);
+    try {
+      const { data } = await api.post<VerifyResetCodeResponse>("/auth/verify-reset-code", {
+        reset_token: resetToken,
+        code: resetCode.trim(),
+      });
+      toast.success(data.message || "Code confirmed. You may now set your new password.");
+      setMode("forgot_new_password");
+    } catch (error: unknown) {
+      if (error instanceof AxiosError) {
+        toast.error(error.response?.data?.message ?? "Invalid or expired verification code.");
+      } else {
+        toast.error("Code verification failed.");
+      }
+    } finally {
+      setForgotLoading(false);
+    }
+  }
+
+  // Step 3: Set new password
+  async function submitResetPassword(e: React.FormEvent) {
+    e.preventDefault();
 
     if (newPassword.length < 10) {
       toast.warning("New password must be at least 10 characters long.");
@@ -485,11 +516,11 @@ export default function LoginPage() {
               </motion.form>
             )}
 
-            {/* VIEW 3: FORGOT PASSWORD - STEP 2 (VERIFY CODE & SET NEW PASSWORD) */}
-            {mode === "forgot_reset" && (
+            {/* VIEW 3: FORGOT PASSWORD - STEP 2 (CONFIRM 6-DIGIT CODE) */}
+            {mode === "forgot_verify" && (
               <motion.form
-                key="forgot-reset-form"
-                onSubmit={submitResetPassword}
+                key="forgot-verify-form"
+                onSubmit={submitVerifyCode}
                 initial={{ opacity: 0, x: 16 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -16 }}
@@ -505,9 +536,9 @@ export default function LoginPage() {
                 </button>
 
                 <div className="mb-4">
-                  <h2 className="text-2xl font-bold text-olive-50">Set New Password</h2>
+                  <h2 className="text-2xl font-bold text-olive-50">Confirm Verification Code</h2>
                   <p className="text-xs text-steel-300 mt-1">
-                    Verification code dispatched to{" "}
+                    Authorization code dispatched to{" "}
                     <span className="font-mono text-olive-200">{maskedEmail || resetIdentifier}</span>.
                   </p>
                 </div>
@@ -518,7 +549,7 @@ export default function LoginPage() {
                   <div className="leading-relaxed">
                     An authorization code was dispatched to{" "}
                     <span className="font-mono font-semibold text-olive-200">{maskedEmail || resetIdentifier}</span>.
-                    Check your email inbox and enter the 6-digit code below.
+                    Check your inbox and enter the 6-digit code below to proceed.
                   </div>
                 </div>
 
@@ -536,7 +567,7 @@ export default function LoginPage() {
                     {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : "Resend code"}
                   </button>
                 </div>
-                <div className="relative mb-4">
+                <div className="relative mb-6">
                   <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
                   <input
                     required
@@ -545,11 +576,56 @@ export default function LoginPage() {
                     type="text"
                     inputMode="numeric"
                     autoComplete="one-time-code"
-                    className="input-field pl-9 font-mono tracking-widest text-sm"
+                    className="input-field pl-9 font-mono tracking-widest text-base"
                     value={resetCode}
                     onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    placeholder="123456"
+                    placeholder="000000"
                   />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={forgotLoading || resetCode.length !== 6}
+                  className="btn-primary w-full disabled:opacity-50"
+                >
+                  {forgotLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Confirm Code
+                </button>
+
+                <div className="mt-4 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setMode("login")}
+                    className="text-xs text-steel-400 hover:text-olive-300 transition-colors"
+                  >
+                    Cancel and return to Sign In
+                  </button>
+                </div>
+              </motion.form>
+            )}
+
+            {/* VIEW 4: FORGOT PASSWORD - STEP 3 (SET NEW PASSWORD) */}
+            {mode === "forgot_new_password" && (
+              <motion.form
+                key="forgot-new-password-form"
+                onSubmit={submitResetPassword}
+                initial={{ opacity: 0, x: 16 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -16 }}
+                transition={{ duration: 0.25 }}
+              >
+                <div className="mb-4">
+                  <h2 className="text-2xl font-bold text-olive-50">Set New Password</h2>
+                  <p className="text-xs text-steel-300 mt-1">
+                    Authorization verified for{" "}
+                    <span className="font-mono text-olive-200">{maskedEmail || resetIdentifier}</span>.
+                  </p>
+                </div>
+
+                {/* Verified Confirmation Badge */}
+                <div className="mb-5 p-3 rounded-xl border border-emerald-700/40 bg-emerald-950/30 text-xs text-emerald-300 flex items-center gap-2.5 shadow-inner">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+                  <span>Code verified. Please enter your new password below.</span>
                 </div>
 
                 {/* New Password Input */}
@@ -560,6 +636,7 @@ export default function LoginPage() {
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
                   <input
                     required
+                    autoFocus
                     type={showNewPassword ? "text" : "password"}
                     autoComplete="new-password"
                     className="input-field pl-9 pr-10 text-sm"
