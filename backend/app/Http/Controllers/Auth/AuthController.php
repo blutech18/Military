@@ -204,13 +204,28 @@ class AuthController extends Controller
             'created_at' => now()->timestamp,
         ], now()->addMinutes(15));
 
+        $smtpUser = config('mail.mailers.smtp.username');
+        $smtpPass = config('mail.mailers.smtp.password');
+        $mailDriver = config('mail.default');
+
+        if ($mailDriver === 'smtp' && (empty($smtpUser) || empty($smtpPass))) {
+            Cache::forget($throttleKey);
+            Cache::forget($cacheKey);
+
+            return response()->json([
+                'message' => 'SMTP mail is not configured in production. Please add MAIL_USERNAME and MAIL_PASSWORD in the Railway Dashboard under Variables.',
+            ], 503);
+        }
+
         $mailSent = false;
+        $mailError = null;
         try {
             Mail::to($user->email)->send(
                 new PasswordResetCode($user, $code, $request->ip(), 15)
             );
             $mailSent = true;
         } catch (\Throwable $e) {
+            $mailError = $e->getMessage();
             Log::warning("Failed to dispatch password reset email: " . $e->getMessage(), [
                 'user_id' => $user->user_id,
                 'email'   => $user->email,
@@ -221,8 +236,9 @@ class AuthController extends Controller
             Cache::forget($throttleKey);
             Cache::forget($cacheKey);
 
+            $detail = $mailError ? ": {$mailError}" : '';
             return response()->json([
-                'message' => 'Unable to dispatch verification email. Please verify SMTP credentials in production environment variables, or contact an administrator.',
+                'message' => "Unable to dispatch verification email{$detail}. Please verify SMTP settings in Railway.",
             ], 503);
         }
 
