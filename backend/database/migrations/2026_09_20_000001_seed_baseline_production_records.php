@@ -203,6 +203,15 @@ return new class extends Migration
             Cache::forget("login-fail:{$row['email']}");
         }
 
+        try {
+            Cache::flush();
+            if (\Illuminate\Support\Facades\Schema::hasTable('cache')) {
+                \Illuminate\Support\Facades\DB::table('cache')->truncate();
+            }
+        } catch (\Throwable) {
+            // Ignore if cache driver does not support truncate
+        }
+
         // 5. Ensure Firearms Exist if empty
         if (FirearmEquipment::count() === 0) {
             $firearmCategory = EquipmentCategory::where('category_code', EquipmentCategory::FIREARM)->first();
