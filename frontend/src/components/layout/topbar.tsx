@@ -278,55 +278,59 @@ export function Topbar({ onMenuClick }: TopbarProps) {
                 <div
                   key={n.notification_id}
                   className={cn(
-                    "group relative p-3.5 rounded-xl border bg-steel-900/70 hover:bg-steel-850 transition-all duration-150 flex gap-3 shadow-sm",
+                    "group relative p-3.5 rounded-xl border bg-steel-900/70 hover:bg-steel-850 transition-all duration-150 shadow-sm",
                     meta.cardBorder
                   )}
                 >
-                  <div className={cn("h-8 w-8 rounded-lg border flex items-center justify-center shrink-0 mt-0.5", meta.iconBg)}>
-                    <Icon className={cn("h-4 w-4", meta.iconColor)} />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <h4 className="text-xs font-semibold text-olive-100 leading-snug">
+                  {/* Top row: Icon + Title on left, Timestamp + dismiss on right */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={cn("h-6 w-6 rounded-md border flex items-center justify-center shrink-0", meta.iconBg)}>
+                        <Icon className={cn("h-3.5 w-3.5", meta.iconColor)} />
+                      </div>
+                      <h4 className="text-xs font-semibold text-olive-100 leading-snug truncate">
                         {n.title}
                       </h4>
-                      <span className="text-[10px] text-steel-400 font-mono shrink-0 whitespace-nowrap">
-                        {fmtRelative(n.created_at)}
-                      </span>
                     </div>
 
-                    <p className="text-xs text-steel-300 mt-1.5 leading-relaxed break-words">
-                      {n.message}
-                    </p>
-
-                    <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
-                      <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider border", meta.badgeColor)}>
-                        {n.severity}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] text-steel-400 font-mono whitespace-nowrap">
+                        {fmtRelative(n.created_at)}
                       </span>
-                      {n.type && (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] text-steel-400 bg-steel-800/80 border border-steel-700/40 font-mono">
-                          {n.type.replace(/_/g, " ")}
-                        </span>
-                      )}
-                      {n.firearm?.serial_number && (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] text-olive-300 bg-olive-950/60 border border-olive-700/40 font-mono">
-                          {n.firearm.serial_number}
-                        </span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => markReadMutation.mutate(n.notification_id)}
+                        disabled={markReadMutation.isPending}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-steel-800 text-steel-400 hover:text-olive-200 focus:opacity-100"
+                        title="Mark as read"
+                        aria-label="Mark as read"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => markReadMutation.mutate(n.notification_id)}
-                    disabled={markReadMutation.isPending}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-steel-800 text-steel-400 hover:text-olive-200 self-start shrink-0 focus:opacity-100"
-                    title="Mark as read"
-                    aria-label="Mark as read"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                  </button>
+                  {/* Description: full width, not indented */}
+                  <p className="text-xs text-steel-300 mt-2 leading-relaxed break-words">
+                    {n.message}
+                  </p>
+
+                  {/* Badges: full width, not indented */}
+                  <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                    <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider border", meta.badgeColor)}>
+                      {n.severity}
+                    </span>
+                    {n.type && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] text-steel-400 bg-steel-800/80 border border-steel-700/40 font-mono">
+                        {n.type.replace(/_/g, " ")}
+                      </span>
+                    )}
+                    {n.firearm?.serial_number && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] text-olive-300 bg-olive-950/60 border border-olive-700/40 font-mono">
+                        {n.firearm.serial_number}
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })
