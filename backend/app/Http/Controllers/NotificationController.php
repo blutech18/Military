@@ -21,7 +21,8 @@ class NotificationController extends Controller
 
     public function unread(Request $request): JsonResponse
     {
-        $items = Notification::where('user_id', $request->user()->user_id)
+        $items = Notification::with('firearm:equipment_id,serial_number,model')
+            ->where('user_id', $request->user()->user_id)
             ->where('status', Notification::STATUS_UNREAD)
             ->latest()->limit(50)->get();
         return response()->json(['items' => $items, 'count' => $items->count()]);

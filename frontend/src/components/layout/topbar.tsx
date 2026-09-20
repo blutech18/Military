@@ -1,14 +1,29 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bell, Menu, Radio, Search, WifiOff, X } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  AlertCircle,
+  AlertTriangle,
+  Bell,
+  BellOff,
+  Check,
+  CheckCheck,
+  ExternalLink,
+  Info,
+  KeyRound,
+  Menu,
+  Radio,
+  Search,
+  WifiOff,
+  X,
+} from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import Cookies from "js-cookie";
 import { api, TOKEN_COOKIE } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
 import Link from "next/link";
-import { cn } from "@/lib/utils";
+import { cn, fmtRelative } from "@/lib/utils";
 
 interface TopbarProps {
   onMenuClick?: () => void;
@@ -48,6 +63,25 @@ export function Topbar({ onMenuClick }: TopbarProps) {
     enabled: !!user,
   });
   const data = notif.data;
+
+  const markReadMutation = useMutation({
+    mutationFn: (id: number) => api.patch(`/notifications/${id}/read`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["unread-notifications"] });
+      qc.invalidateQueries({ queryKey: ["notifications-page"] });
+    },
+    onError: () => toast.error("Failed to update notification."),
+  });
+
+  const markAllReadMutation = useMutation({
+    mutationFn: () => api.post("/notifications/mark-all-read"),
+    onSuccess: () => {
+      toast.success("All notifications marked as read.");
+      qc.invalidateQueries({ queryKey: ["unread-notifications"] });
+      qc.invalidateQueries({ queryKey: ["notifications-page"] });
+    },
+    onError: () => toast.error("Failed to mark all as read."),
+  });
 
   // IoT connection indicator — pushed live over Server-Sent Events.
   // Falls back to fast polling if the stream is unavailable, so the indicator
@@ -184,40 +218,140 @@ export function Topbar({ onMenuClick }: TopbarProps) {
       {/* Notifications Drawer */}
       {isDrawerOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] transition-opacity"
           onClick={() => setIsDrawerOpen(false)}
         />
       )}
       
       <div
         className={cn(
-          "fixed top-0 right-0 h-screen w-80 bg-steel-900 border-l border-olive-700/30 z-[70] shadow-2xl flex flex-col transition-transform duration-300 ease-in-out",
+          "fixed top-0 right-0 h-screen w-full sm:w-96 md:w-[420px] bg-steel-950/95 backdrop-blur-xl border-l border-olive-700/30 z-[70] shadow-2xl flex flex-col transition-transform duration-300 ease-in-out",
           isDrawerOpen ? "translate-x-0" : "translate-x-full"
         )}
       >
-        <div className="h-16 flex items-center justify-between px-4 border-b border-olive-700/30 shrink-0">
-          <h2 className="text-sm font-bold text-olive-50">Notifications</h2>
-          <button onClick={() => setIsDrawerOpen(false)} className="btn-ghost p-1.5 rounded-md">
-            <X className="h-4 w-4" />
-          </button>
+        {/* Drawer Header */}
+        <div className="h-16 flex items-center justify-between px-5 border-b border-steel-800/60 bg-steel-900/40 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-olive-500/10 text-olive-300 border border-olive-500/20">
+              <Bell className="h-4 w-4" />
+            </div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xs uppercase tracking-widest font-bold text-olive-100">Notifications</h2>
+              {data?.count && data.count > 0 ? (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-olive-500/20 text-olive-300 border border-olive-500/30">
+                  {data.count}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {data?.count && data.count > 0 ? (
+              <button
+                type="button"
+                onClick={() => markAllReadMutation.mutate()}
+                disabled={markAllReadMutation.isPending}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] text-steel-400 hover:text-olive-300 hover:bg-steel-800/60 transition-colors focus:outline-none"
+                title="Mark all notifications as read"
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Mark All Read</span>
+              </button>
+            ) : null}
+            <button
+              onClick={() => setIsDrawerOpen(false)}
+              className="btn-ghost p-1.5 rounded-lg text-steel-400 hover:text-olive-200 focus:outline-none"
+              aria-label="Close drawer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         
+        {/* Drawer Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {data?.items && data.items.length > 0 ? (
-            data.items.map((n: any) => (
-              <div key={n.notification_id} className="bg-steel-800/50 p-3 rounded-lg border border-olive-700/20">
-                <p className="text-sm font-medium text-olive-100">{n.title}</p>
-                <p className="text-xs text-steel-400 mt-1">{n.message}</p>
-              </div>
-            ))
+            data.items.map((n: any) => {
+              const meta = getNotificationMeta(n);
+              const Icon = meta.icon;
+              return (
+                <div
+                  key={n.notification_id}
+                  className={cn(
+                    "group relative p-3.5 rounded-xl border bg-steel-900/70 hover:bg-steel-850 transition-all duration-150 flex gap-3 shadow-sm",
+                    meta.cardBorder
+                  )}
+                >
+                  <div className={cn("h-8 w-8 rounded-lg border flex items-center justify-center shrink-0 mt-0.5", meta.iconBg)}>
+                    <Icon className={cn("h-4 w-4", meta.iconColor)} />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="text-xs font-semibold text-olive-100 leading-snug">
+                        {n.title}
+                      </h4>
+                      <span className="text-[10px] text-steel-400 font-mono shrink-0 whitespace-nowrap">
+                        {fmtRelative(n.created_at)}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-steel-300 mt-1.5 leading-relaxed break-words">
+                      {n.message}
+                    </p>
+
+                    <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                      <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider border", meta.badgeColor)}>
+                        {n.severity}
+                      </span>
+                      {n.type && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] text-steel-400 bg-steel-800/80 border border-steel-700/40 font-mono">
+                          {n.type.replace(/_/g, " ")}
+                        </span>
+                      )}
+                      {n.firearm?.serial_number && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] text-olive-300 bg-olive-950/60 border border-olive-700/40 font-mono">
+                          {n.firearm.serial_number}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => markReadMutation.mutate(n.notification_id)}
+                    disabled={markReadMutation.isPending}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-steel-800 text-steel-400 hover:text-olive-200 self-start shrink-0 focus:opacity-100"
+                    title="Mark as read"
+                    aria-label="Mark as read"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              );
+            })
           ) : (
-            <p className="text-sm text-steel-500 text-center py-4">No new notifications</p>
+            <div className="h-full flex flex-col items-center justify-center py-20 px-4 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-steel-900/90 border border-olive-700/30 flex items-center justify-center mb-3 text-steel-400 shadow-inner">
+                <BellOff className="h-5 w-5 text-olive-400/60" />
+              </div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-olive-100">All Clear</h3>
+              <p className="text-xs text-steel-400 mt-1 max-w-[200px] leading-relaxed">
+                No unread operational notifications or security alerts.
+              </p>
+            </div>
           )}
         </div>
         
-        <div className="p-4 border-t border-olive-700/30 shrink-0">
-          <Link href="/notifications" onClick={() => setIsDrawerOpen(false)} className="w-full btn-primary py-2 flex items-center justify-center rounded-md text-sm font-medium">
-            View All Notifications
+        {/* Drawer Footer */}
+        <div className="p-3.5 border-t border-steel-800/60 bg-steel-900/40 shrink-0">
+          <Link
+            href="/notifications"
+            onClick={() => setIsDrawerOpen(false)}
+            className="w-full btn-secondary py-2 flex items-center justify-center gap-1.5 rounded-lg text-xs font-medium"
+          >
+            <span>View All Notifications</span>
+            <ExternalLink className="h-3 w-3 text-steel-400" />
           </Link>
         </div>
       </div>
@@ -242,6 +376,39 @@ function RealtimeAlertToast({ items }: { items?: any[] }) {
   }, [items]);
 
   return null;
+}
+
+function getNotificationMeta(n: any) {
+  const sev = (n.severity || "").toLowerCase();
+  const type = (n.type || "").toLowerCase();
+
+  if (sev === "critical") {
+    return {
+      icon: AlertTriangle,
+      iconColor: "text-red-400",
+      iconBg: "bg-red-500/15 border-red-500/30",
+      cardBorder: "border-red-500/30 hover:border-red-500/50",
+      badgeColor: "bg-red-500/15 text-red-300 border-red-500/30",
+    };
+  }
+
+  if (sev === "warning" || type.includes("password") || type.includes("breach") || type.includes("security")) {
+    return {
+      icon: type.includes("password") ? KeyRound : AlertCircle,
+      iconColor: "text-amber-400",
+      iconBg: "bg-amber-500/15 border-amber-500/30",
+      cardBorder: "border-amber-500/30 hover:border-amber-500/50",
+      badgeColor: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    };
+  }
+
+  return {
+    icon: Info,
+    iconColor: "text-olive-300",
+    iconBg: "bg-olive-500/15 border-olive-500/30",
+    cardBorder: "border-olive-700/30 hover:border-olive-500/40",
+    badgeColor: "bg-olive-500/15 text-olive-300 border-olive-500/30",
+  };
 }
 
 /** Pulsing "Live" pill — green dot pulses on each refetch, dims if the stream is stale. */
