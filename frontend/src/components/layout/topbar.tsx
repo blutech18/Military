@@ -366,14 +366,31 @@ export function Topbar({ onMenuClick }: TopbarProps) {
 /** Shows toast for new critical/warning notifications as they arrive via polling */
 function RealtimeAlertToast({ items }: { items?: any[] }) {
   const seenRef = useRef<Set<number>>(new Set());
+  const initialLoadedRef = useRef(false);
 
   useEffect(() => {
     if (!items) return;
+
+    // On initial mount, register all current notifications so historical alerts don't spam toasts on page load
+    if (!initialLoadedRef.current) {
+      for (const n of items) {
+        if (n?.notification_id) {
+          seenRef.current.add(n.notification_id);
+        }
+      }
+      initialLoadedRef.current = true;
+      return;
+    }
+
+    // Only fire toasts for newly arrived notifications received from live polling
     for (const n of items) {
-      if (!seenRef.current.has(n.notification_id) && (n.severity === "critical" || n.severity === "warning")) {
+      if (n?.notification_id && !seenRef.current.has(n.notification_id)) {
         seenRef.current.add(n.notification_id);
-        if (seenRef.current.size > 1) {
-          toast[n.severity === "critical" ? "error" : "warning"](n.title, { description: n.message, duration: 8000 });
+        if (n.severity === "critical" || n.severity === "warning") {
+          toast[n.severity === "critical" ? "error" : "warning"](n.title, {
+            description: n.message,
+            duration: 8000,
+          });
         }
       }
     }

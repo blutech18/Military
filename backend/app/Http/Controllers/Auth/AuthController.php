@@ -91,14 +91,16 @@ class AuthController extends Controller
                     $lockoutMinutes = (int) config('armory.lockout_minutes', 30);
                     $user->update(['locked_until' => now()->addMinutes($lockoutMinutes)]);
 
-                    Notification::create([
-                        'user_id'      => $user->user_id,
-                        'type'         => 'account_locked',
-                        'severity'     => Notification::SEVERITY_CRITICAL,
-                        'title'        => 'Account Locked',
-                        'message'      => "Account {$user->username} locked after {$lockoutAttempts} failed attempts. Unlocks in {$lockoutMinutes} min.",
-                        'payload'      => ['ip' => $ip, 'attempts' => $user->failed_login_attempts],
-                    ]);
+                    if ($user->failed_login_attempts === $lockoutAttempts) {
+                        Notification::create([
+                            'user_id'      => $user->user_id,
+                            'type'         => 'account_locked',
+                            'severity'     => Notification::SEVERITY_CRITICAL,
+                            'title'        => 'Account Locked',
+                            'message'      => "Account {$user->username} locked after {$lockoutAttempts} failed attempts. Unlocks in {$lockoutMinutes} min.",
+                            'payload'      => ['ip' => $ip, 'attempts' => $user->failed_login_attempts],
+                        ]);
+                    }
 
                     AuditLogger::log('account_locked', "Account {$user->username} locked after {$lockoutAttempts} failures", $user, request: $request);
                 }
@@ -544,6 +546,15 @@ class AuthController extends Controller
                 'last_login_ip'         => $request->ip(),
                 'locked_until'          => null,
             ]);
+
+            // Clear obsolete lockout notifications for this user upon successful authentication
+            Notification::where('user_id', $user->user_id)
+                ->where('type', 'account_locked')
+                ->where('status', Notification::STATUS_UNREAD)
+                ->update([
+                    'status'  => Notification::STATUS_READ,
+                    'read_at' => now(),
+                ]);
 
             Cache::forget("login-fail:{$user->username}:{$request->ip()}");
 
