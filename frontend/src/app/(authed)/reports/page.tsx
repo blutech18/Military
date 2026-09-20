@@ -193,10 +193,10 @@ function FirearmSelect({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-steel-950 border border-olive-600/70 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.85)] overflow-hidden backdrop-blur-2xl"
+            className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-[#0d1317] border border-olive-600/70 rounded-xl shadow-[0_25px_60px_rgba(0,0,0,0.95)] overflow-hidden"
           >
             {/* Search Filter Header */}
-            <div className="p-2.5 border-b border-olive-700/30 bg-steel-950/40">
+            <div className="p-2.5 border-b border-olive-700/40 bg-[#12191f]">
               <div className="relative">
                 <Search className="h-3.5 w-3.5 text-steel-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
@@ -205,13 +205,13 @@ function FirearmSelect({
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Filter by serial, model, location..."
-                  className="w-full bg-steel-900 border border-olive-700/40 rounded-lg pl-8 pr-3 py-1.5 text-xs text-olive-100 placeholder:text-steel-500 focus:outline-none focus:border-olive-500 focus:ring-1 focus:ring-olive-500/40"
+                  className="w-full bg-[#182128] border border-olive-700/50 rounded-lg pl-8 pr-3 py-1.5 text-xs text-olive-100 placeholder:text-steel-400 focus:outline-none focus:border-olive-500 focus:ring-1 focus:ring-olive-500/40"
                 />
               </div>
             </div>
 
             {/* Firearm List */}
-            <div className="max-h-60 overflow-y-auto divide-y divide-olive-700/10 p-1">
+            <div className="max-h-60 overflow-y-auto divide-y divide-steel-800/60 p-1 bg-[#0d1317]">
               {filtered.length > 0 ? (
                 filtered.map((f) => {
                   const isSelected = String(f.equipment_id) === String(value);
@@ -227,8 +227,8 @@ function FirearmSelect({
                       className={cn(
                         "w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-xs text-left transition-colors",
                         isSelected
-                          ? "bg-tactical-surface text-olive-100 border border-olive-500/30 font-semibold"
-                          : "text-steel-300 hover:bg-steel-800/70 hover:text-olive-50"
+                          ? "bg-olive-900/40 text-olive-100 border border-olive-500/40 font-semibold"
+                          : "text-steel-300 hover:bg-[#161f26] hover:text-olive-50"
                       )}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
