@@ -366,7 +366,6 @@ export default function LoginPage() {
                     className="input-field pl-9"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="e.g. armory.custodian or operator@gmail.com"
                   />
                 </div>
 
@@ -466,7 +465,6 @@ export default function LoginPage() {
                     className="input-field pl-9"
                     value={resetIdentifier}
                     onChange={(e) => setResetIdentifier(e.target.value)}
-                    placeholder="e.g. armory.custodian or armory@10rcdg.mil.ph"
                   />
                 </div>
 
