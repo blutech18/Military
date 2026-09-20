@@ -204,15 +204,26 @@ class AuthController extends Controller
             'created_at' => now()->timestamp,
         ], now()->addMinutes(15));
 
+        $mailSent = false;
         try {
             Mail::to($user->email)->send(
                 new PasswordResetCode($user, $code, $request->ip(), 15)
             );
+            $mailSent = true;
         } catch (\Throwable $e) {
             Log::warning("Failed to dispatch password reset email: " . $e->getMessage(), [
                 'user_id' => $user->user_id,
                 'email'   => $user->email,
             ]);
+        }
+
+        if (! $mailSent) {
+            Cache::forget($throttleKey);
+            Cache::forget($cacheKey);
+
+            return response()->json([
+                'message' => 'Unable to dispatch verification email. Please verify SMTP credentials in production environment variables, or contact an administrator.',
+            ], 503);
         }
 
         AuditLogger::log(
