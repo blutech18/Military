@@ -14,10 +14,18 @@ class EmailDeliveryService
      */
     public static function getApiKey(): ?string
     {
-        return config('services.resend.key')
-            ?: env('RESEND_API_KEY')
-            ?: getenv('RESEND_API_KEY')
-            ?: ($_ENV['RESEND_API_KEY'] ?? ($_SERVER['RESEND_API_KEY'] ?? null));
+        // Read directly from OS environment first (bypasses any config cache)
+        $key = $_SERVER['RESEND_API_KEY']
+            ?? $_ENV['RESEND_API_KEY']
+            ?? getenv('RESEND_API_KEY')
+            ?: null;
+
+        if (!empty($key)) {
+            return $key;
+        }
+
+        // Fallback to Laravel config (works when config:cache is fresh)
+        return config('services.resend.key') ?: env('RESEND_API_KEY') ?: null;
     }
 
     /**
@@ -86,7 +94,13 @@ class EmailDeliveryService
 
         // In production, missing RESEND_API_KEY is an unrecoverable configuration error
         if ($isProduction) {
-            Log::error("Email delivery failed: RESEND_API_KEY is not configured in production environment.");
+            Log::error('Email delivery failed: RESEND_API_KEY is not configured.', [
+                '_SERVER_set'  => isset($_SERVER['RESEND_API_KEY']),
+                '_ENV_set'     => isset($_ENV['RESEND_API_KEY']),
+                'getenv_set'   => getenv('RESEND_API_KEY') !== false,
+                'config_set'   => !empty(config('services.resend.key')),
+                'APP_ENV'      => app()->environment(),
+            ]);
             return [
                 'sent'         => false,
                 'provider'     => 'unconfigured',

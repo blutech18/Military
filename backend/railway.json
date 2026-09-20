@@ -3,7 +3,7 @@
     "builder": "RAILPACK"
   },
   "deploy": {
-    "preDeployCommand": "php artisan config:clear && php artisan config:cache && php artisan route:cache && php artisan migrate --force",
+    "preDeployCommand": "php artisan config:clear && php artisan route:clear && php artisan migrate --force",
     "healthcheckPath": "/up",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE",
