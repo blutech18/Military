@@ -10,43 +10,47 @@ use Illuminate\Support\Facades\Log;
 class EmailDeliveryService
 {
     /**
-     * Get Brevo (Sendinblue) API key from environment.
-     * Brevo free tier sends to ANY email — no domain verification required.
+     * Get Mailjet credentials [apiKey, secretKey] from environment.
+     * Free tier: 200 emails/day, sends to ANY recipient, no domain verification needed.
+     */
+    public static function getMailjetCredentials(): array
+    {
+        $apiKey    = $_SERVER['MAILJET_API_KEY']    ?? $_ENV['MAILJET_API_KEY']    ?? getenv('MAILJET_API_KEY')    ?: config('services.mailjet.key')    ?: null;
+        $secretKey = $_SERVER['MAILJET_SECRET_KEY'] ?? $_ENV['MAILJET_SECRET_KEY'] ?? getenv('MAILJET_SECRET_KEY') ?: config('services.mailjet.secret') ?: null;
+        return [$apiKey, $secretKey];
+    }
+
+    /**
+     * Get Brevo API key from environment.
+     * Free tier: 300 emails/day, sends to ANY recipient, no domain verification needed.
      */
     public static function getBrevoKey(): ?string
     {
-        $key = $_SERVER['BREVO_API_KEY']
-            ?? $_ENV['BREVO_API_KEY']
-            ?? getenv('BREVO_API_KEY')
-            ?: null;
-
+        $key = $_SERVER['BREVO_API_KEY'] ?? $_ENV['BREVO_API_KEY'] ?? getenv('BREVO_API_KEY') ?: null;
         return !empty($key) ? $key : (config('services.brevo.key') ?: null);
     }
 
     /**
      * Get Resend API key from environment.
+     * Free tier: sends ONLY to the Resend account owner's email (limited).
      */
     public static function getResendKey(): ?string
     {
-        $key = $_SERVER['RESEND_API_KEY']
-            ?? $_ENV['RESEND_API_KEY']
-            ?? getenv('RESEND_API_KEY')
-            ?: null;
-
+        $key = $_SERVER['RESEND_API_KEY'] ?? $_ENV['RESEND_API_KEY'] ?? getenv('RESEND_API_KEY') ?: null;
         return !empty($key) ? $key : (config('services.resend.key') ?: null);
     }
 
     /**
      * Dispatch a 6-digit password reset verification email.
      *
-     * Provider priority: Brevo → Resend → sandbox (local only)
+     * Provider priority: Mailjet → Brevo → Resend → sandbox (local only)
      *
      * @return array{sent: bool, provider: string, sandbox_mode: bool, error: ?string, code: ?string}
      */
     public static function sendPasswordReset(User $user, string $code, string $ipAddress, int $expiresMinutes = 15): array
     {
-        $subject = '[ArmoryDB] Password Reset Verification Code';
-        $html = view('emails.password-reset-code', [
+        $subject  = '[ArmoryDB] Password Reset Verification Code';
+        $html     = view('emails.password-reset-code', [
             'user'           => $user,
             'code'           => $code,
             'ipAddress'      => $ipAddress,
@@ -55,29 +59,39 @@ class EmailDeliveryService
 
         $isProduction = app()->environment('production');
         $fromName     = config('mail.from.name') ?: 'ArmoryDB - 10RCDG';
-        $fromAddress  = 'onboarding@resend.dev'; // safe default for Resend
 
-        // ── 1. Try Brevo first (no domain restriction on free tier) ──────────
+        // ── 1. Mailjet (best free tier, any recipient, no domain required) ──
+        [$mjKey, $mjSecret] = self::getMailjetCredentials();
+        if (!empty($mjKey) && !empty($mjSecret)) {
+            $res = self::sendViaMailjet($mjKey, $mjSecret, $fromName, $user->email, $subject, $html);
+            if ($res['success']) {
+                Log::info("Password reset dispatched via Mailjet to {$user->email}");
+                return ['sent' => true, 'provider' => 'mailjet', 'sandbox_mode' => false, 'error' => null, 'code' => null];
+            }
+            Log::warning("Mailjet failed for {$user->email}: " . ($res['error'] ?? 'unknown'));
+        }
+
+        // ── 2. Brevo (fallback, any recipient, no domain required) ──────────
         $brevoKey = self::getBrevoKey();
         if (!empty($brevoKey)) {
             $res = self::sendViaBrevo($brevoKey, $fromName, $user->email, $subject, $html);
             if ($res['success']) {
-                Log::info("Password reset code dispatched via Brevo to {$user->email}");
+                Log::info("Password reset dispatched via Brevo to {$user->email}");
                 return ['sent' => true, 'provider' => 'brevo', 'sandbox_mode' => false, 'error' => null, 'code' => null];
             }
-            Log::warning("Brevo dispatch failed for {$user->email}: " . ($res['error'] ?? 'unknown'));
+            Log::warning("Brevo failed for {$user->email}: " . ($res['error'] ?? 'unknown'));
         }
 
-        // ── 2. Fallback: Resend (works only if recipient = Resend account email) ──
+        // ── 3. Resend (fallback, restricted to account owner email) ─────────
         $resendKey = self::getResendKey();
         if (!empty($resendKey)) {
-            $from = "{$fromName} <{$fromAddress}>";
+            $from = "{$fromName} <onboarding@resend.dev>";
             $res  = self::sendViaResend($resendKey, $from, $user->email, $subject, $html);
             if ($res['success']) {
-                Log::info("Password reset code dispatched via Resend to {$user->email}");
+                Log::info("Password reset dispatched via Resend to {$user->email}");
                 return ['sent' => true, 'provider' => 'resend', 'sandbox_mode' => false, 'error' => null, 'code' => null];
             }
-            Log::error("Resend dispatch failed for {$user->email}: " . ($res['error'] ?? 'unknown'));
+            Log::error("Resend failed for {$user->email}: " . ($res['error'] ?? 'unknown'));
 
             if ($isProduction) {
                 return ['sent' => false, 'provider' => 'resend_failed', 'sandbox_mode' => false, 'error' => $res['error'], 'code' => null];
@@ -85,12 +99,13 @@ class EmailDeliveryService
             return ['sent' => false, 'provider' => 'resend_failed', 'sandbox_mode' => true, 'error' => $res['error'], 'code' => $code];
         }
 
-        // ── 3. No provider configured ────────────────────────────────────────
+        // ── 4. No provider configured ────────────────────────────────────────
         if ($isProduction) {
-            Log::error('Email delivery failed: no email provider configured (BREVO_API_KEY or RESEND_API_KEY required).', [
-                'brevo_set'  => !empty($brevoKey),
-                'resend_set' => !empty($resendKey),
-                'APP_ENV'    => app()->environment(),
+            Log::error('Email delivery failed: no email provider configured.', [
+                'mailjet_set' => !empty($mjKey),
+                'brevo_set'   => !empty($brevoKey),
+                'resend_set'  => !empty($resendKey),
+                'APP_ENV'     => app()->environment(),
             ]);
             return [
                 'sent'         => false,
@@ -101,7 +116,6 @@ class EmailDeliveryService
             ];
         }
 
-        // Local sandbox
         Log::info("Password reset sandbox mode for {$user->username}: {$code}");
         return ['sent' => false, 'provider' => 'local_sandbox', 'sandbox_mode' => true, 'error' => 'No email provider configured.', 'code' => $code];
     }
@@ -111,20 +125,26 @@ class EmailDeliveryService
      */
     public static function sendAlert(Notification $notification, User $recipient): bool
     {
-        $subject = match ($notification->severity) {
+        $subject  = match ($notification->severity) {
             'critical' => '🚨 CRITICAL: ' . $notification->title,
             'warning'  => '⚠️ WARNING: '  . $notification->title,
             default    => 'ℹ️ INFO: '     . $notification->title,
         };
-
-        $html = view('emails.alert-notification', [
+        $html     = view('emails.alert-notification', [
             'notification'  => $notification,
             'recipientName' => $recipient->fullName(),
         ])->render();
-
         $fromName = config('mail.from.name') ?: 'ArmoryDB - 10RCDG';
 
-        // Try Brevo first
+        // Try Mailjet first
+        [$mjKey, $mjSecret] = self::getMailjetCredentials();
+        if (!empty($mjKey) && !empty($mjSecret)) {
+            $res = self::sendViaMailjet($mjKey, $mjSecret, $fromName, $recipient->email, $subject, $html);
+            if ($res['success']) return true;
+            Log::warning("Mailjet alert failed to {$recipient->email}: " . ($res['error'] ?? 'unknown'));
+        }
+
+        // Fallback to Brevo
         $brevoKey = self::getBrevoKey();
         if (!empty($brevoKey)) {
             $res = self::sendViaBrevo($brevoKey, $fromName, $recipient->email, $subject, $html);
@@ -141,36 +161,35 @@ class EmailDeliveryService
             Log::warning("Resend alert failed to {$recipient->email}: " . ($res['error'] ?? 'unknown'));
         }
 
-        Log::info("Alert #{$notification->notification_id} skipped — no email provider configured.");
+        Log::info("Alert #{$notification->notification_id} skipped — no email provider available.");
         return false;
     }
 
     /**
-     * Send via Brevo (Sendinblue) Transactional Email API v3.
-     * Endpoint: POST https://api.brevo.com/v3/smtp/email
-     * Free tier: 300 emails/day, sends to ANY recipient, no domain verification needed.
+     * Send via Mailjet REST API v3.1
+     * Free: 200 emails/day — no domain verification — any recipient.
      *
      * @return array{success: bool, error: ?string}
      */
-    protected static function sendViaBrevo(string $apiKey, string $fromName, string $to, string $subject, string $html): array
+    protected static function sendViaMailjet(string $apiKey, string $secretKey, string $fromName, string $to, string $subject, string $html): array
     {
         try {
-            $response = Http::withHeaders([
-                'api-key'      => $apiKey,
-                'Content-Type' => 'application/json',
-                'Accept'       => 'application/json',
-            ])->timeout(10)->post('https://api.brevo.com/v3/smtp/email', [
-                'sender'      => ['name' => $fromName, 'email' => 'noreply@armorydb.app'],
-                'to'          => [['email' => $to]],
-                'subject'     => $subject,
-                'htmlContent' => $html,
-            ]);
+            $response = Http::withBasicAuth($apiKey, $secretKey)
+                ->timeout(10)
+                ->post('https://api.mailjet.com/v3.1/send', [
+                    'Messages' => [[
+                        'From'     => ['Email' => 'noreply@armorydb.app', 'Name' => $fromName],
+                        'To'       => [['Email' => $to]],
+                        'Subject'  => $subject,
+                        'HTMLPart' => $html,
+                    ]],
+                ]);
 
             if ($response->successful()) {
                 return ['success' => true, 'error' => null];
             }
 
-            $errorMsg = $response->json('message') ?? $response->body();
+            $errorMsg = $response->json('ErrorMessage') ?? $response->json('Messages.0.Errors.0.ErrorMessage') ?? $response->body();
             return ['success' => false, 'error' => $errorMsg];
         } catch (\Throwable $e) {
             return ['success' => false, 'error' => $e->getMessage()];
@@ -178,7 +197,36 @@ class EmailDeliveryService
     }
 
     /**
-     * Send via Resend REST API (HTTPS port 443).
+     * Send via Brevo Transactional Email API v3.
+     * Free: 300 emails/day — no domain verification — any recipient.
+     *
+     * @return array{success: bool, error: ?string}
+     */
+    protected static function sendViaBrevo(string $apiKey, string $fromName, string $to, string $subject, string $html): array
+    {
+        try {
+            $response = Http::withHeaders(['api-key' => $apiKey])
+                ->timeout(10)
+                ->post('https://api.brevo.com/v3/smtp/email', [
+                    'sender'      => ['name' => $fromName, 'email' => 'noreply@armorydb.app'],
+                    'to'          => [['email' => $to]],
+                    'subject'     => $subject,
+                    'htmlContent' => $html,
+                ]);
+
+            if ($response->successful()) {
+                return ['success' => true, 'error' => null];
+            }
+
+            return ['success' => false, 'error' => $response->json('message') ?? $response->body()];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Send via Resend REST API.
+     * Free: restricted to Resend account owner's email only.
      *
      * @return array{success: bool, error: ?string}
      */
@@ -198,8 +246,7 @@ class EmailDeliveryService
                 return ['success' => true, 'error' => null];
             }
 
-            $errorMsg = $response->json('message') ?? $response->body();
-            return ['success' => false, 'error' => $errorMsg];
+            return ['success' => false, 'error' => $response->json('message') ?? $response->body()];
         } catch (\Throwable $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }
