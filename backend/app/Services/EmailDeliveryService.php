@@ -173,12 +173,15 @@ class EmailDeliveryService
      */
     protected static function sendViaMailjet(string $apiKey, string $secretKey, string $fromName, string $to, string $subject, string $html): array
     {
+        // Use the configured from address — must be an Active sender in Mailjet account
+        $fromEmail = config('mail.from.address') ?: env('MAIL_FROM_ADDRESS') ?: 'armorygps@gmail.com';
+
         try {
             $response = Http::withBasicAuth($apiKey, $secretKey)
                 ->timeout(10)
                 ->post('https://api.mailjet.com/v3.1/send', [
                     'Messages' => [[
-                        'From'     => ['Email' => 'noreply@armorydb.app', 'Name' => $fromName],
+                        'From'     => ['Email' => $fromEmail, 'Name' => $fromName],
                         'To'       => [['Email' => $to]],
                         'Subject'  => $subject,
                         'HTMLPart' => $html,
