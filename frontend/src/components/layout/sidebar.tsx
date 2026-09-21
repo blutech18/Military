@@ -136,17 +136,17 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
 
         {/* -- Nav -- */}
         <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 min-h-0 w-full flex flex-col justify-between">
-          <ul className="flex-1 flex flex-col justify-between gap-y-1 min-h-[460px] px-3">
+          <ul className="flex flex-col gap-y-1 px-3 py-1">
             {items.map(({ href, label, icon: Icon }) => {
               const active = pathname === href || pathname.startsWith(href + "/");
               return (
-                <li key={href} className="flex-1 flex items-center max-h-11 min-h-[34px]">
+                <li key={href}>
                   <Link
                     href={href}
                     onClick={onClose}
                     title={label}
                     className={cn(
-                      "flex items-center rounded-md px-3 py-2 text-sm whitespace-nowrap overflow-hidden w-full h-full",
+                      "flex items-center rounded-md px-3 py-2 text-sm whitespace-nowrap overflow-hidden w-full",
                       ready ? "transition-[gap,color] duration-300" : "",
                       isCollapsed ? "gap-0" : "gap-3",
                       active
