@@ -245,14 +245,14 @@ export function LiveMap() {
 
   if (!mapKey) {
     return (
-      <div className="relative flex h-full w-full items-center justify-center text-xs text-steel-400">
+      <div className="absolute inset-0 flex items-center justify-center text-xs text-steel-400">
         Initialising map…
       </div>
     );
   }
 
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden">
+    <div className="absolute inset-0 overflow-hidden">
       <MapContainer
         key={mapKey}
         center={[lat, lon]}
