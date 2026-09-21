@@ -613,10 +613,6 @@ export default function LoginPage() {
                 transition={{ duration: 0.25 }}
               >
                 <div className="mb-6">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-950/50 border border-emerald-700/40 text-emerald-300 text-[11px] mb-3 font-medium">
-                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                    <span>Identity Verified</span>
-                  </div>
                   <h2 className="text-2xl font-bold text-olive-50">Set New Password</h2>
                   <p className="text-sm text-steel-400 mt-1">
                     Create a new secure password for{" "}
