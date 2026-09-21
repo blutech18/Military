@@ -541,6 +541,14 @@ export default function LoginPage() {
                     Enter the 6-digit authorization code dispatched to{" "}
                     <span className="font-mono text-olive-200">{maskedEmail || resetIdentifier}</span>.
                   </p>
+                  <div className="mt-3 flex items-start gap-2 rounded-md border border-yellow-700/40 bg-yellow-900/20 px-3 py-2.5">
+                    <span className="mt-0.5 text-yellow-400 text-sm leading-none">⚠</span>
+                    <p className="text-xs text-yellow-300/80 leading-relaxed">
+                      If you don&apos;t see the email in your inbox, please check your{" "}
+                      <span className="font-semibold text-yellow-200">Spam</span> or{" "}
+                      <span className="font-semibold text-yellow-200">Junk</span> folder.
+                    </p>
+                  </div>
                 </div>
 
 
