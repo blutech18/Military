@@ -10,33 +10,36 @@ use Illuminate\Support\Facades\Log;
 class EmailDeliveryService
 {
     /**
-     * Get the active Resend API key from config or environment.
+     * Get Brevo (Sendinblue) API key from environment.
+     * Brevo free tier sends to ANY email — no domain verification required.
      */
-    public static function getApiKey(): ?string
+    public static function getBrevoKey(): ?string
     {
-        // Read directly from OS environment first (bypasses any config cache)
+        $key = $_SERVER['BREVO_API_KEY']
+            ?? $_ENV['BREVO_API_KEY']
+            ?? getenv('BREVO_API_KEY')
+            ?: null;
+
+        return !empty($key) ? $key : (config('services.brevo.key') ?: null);
+    }
+
+    /**
+     * Get Resend API key from environment.
+     */
+    public static function getResendKey(): ?string
+    {
         $key = $_SERVER['RESEND_API_KEY']
             ?? $_ENV['RESEND_API_KEY']
             ?? getenv('RESEND_API_KEY')
             ?: null;
 
-        if (!empty($key)) {
-            return $key;
-        }
-
-        // Fallback to Laravel config (works when config:cache is fresh)
-        return config('services.resend.key') ?: env('RESEND_API_KEY') ?: null;
+        return !empty($key) ? $key : (config('services.resend.key') ?: null);
     }
 
     /**
-     * Dispatch a 6-digit password reset verification email using Resend API (HTTPS port 443).
+     * Dispatch a 6-digit password reset verification email.
      *
-     * In production (APP_ENV=production):
-     * - Dispatches exclusively via Resend API.
-     * - Never exposes the verification code in the response payload.
-     *
-     * In local development (APP_ENV!=production):
-     * - If RESEND_API_KEY is omitted, enables sandbox mode for offline testing.
+     * Provider priority: Brevo → Resend → sandbox (local only)
      *
      * @return array{sent: bool, provider: string, sandbox_mode: bool, error: ?string, code: ?string}
      */
@@ -50,56 +53,44 @@ class EmailDeliveryService
             'expiresMinutes' => $expiresMinutes,
         ])->render();
 
-        $resendKey = self::getApiKey();
         $isProduction = app()->environment('production');
+        $fromName     = config('mail.from.name') ?: 'ArmoryDB - 10RCDG';
+        $fromAddress  = 'onboarding@resend.dev'; // safe default for Resend
 
-        // 1. Dispatch via Resend API if API key is provided
-        if (!empty($resendKey)) {
-            $from = self::resolveFromAddress();
-            $response = self::sendViaResend($resendKey, $from, $user->email, $subject, $html);
-
-            if ($response['success']) {
-                Log::info("Password reset code dispatched via Resend API to {$user->email}");
-                return [
-                    'sent'         => true,
-                    'provider'     => 'resend',
-                    'sandbox_mode' => false,
-                    'error'        => null,
-                    'code'         => null,
-                ];
+        // ── 1. Try Brevo first (no domain restriction on free tier) ──────────
+        $brevoKey = self::getBrevoKey();
+        if (!empty($brevoKey)) {
+            $res = self::sendViaBrevo($brevoKey, $fromName, $user->email, $subject, $html);
+            if ($res['success']) {
+                Log::info("Password reset code dispatched via Brevo to {$user->email}");
+                return ['sent' => true, 'provider' => 'brevo', 'sandbox_mode' => false, 'error' => null, 'code' => null];
             }
-
-            Log::error("Resend API dispatch failed for {$user->email}: " . ($response['error'] ?? 'unknown error'));
-
-            // In production, never expose verification code on failure
-            if ($isProduction) {
-                return [
-                    'sent'         => false,
-                    'provider'     => 'resend_failed',
-                    'sandbox_mode' => false,
-                    'error'        => $response['error'],
-                    'code'         => null,
-                ];
-            }
-
-            // Local development only fallback
-            return [
-                'sent'         => false,
-                'provider'     => 'resend_failed',
-                'sandbox_mode' => true,
-                'error'        => $response['error'],
-                'code'         => $code,
-            ];
+            Log::warning("Brevo dispatch failed for {$user->email}: " . ($res['error'] ?? 'unknown'));
         }
 
-        // In production, missing RESEND_API_KEY is an unrecoverable configuration error
+        // ── 2. Fallback: Resend (works only if recipient = Resend account email) ──
+        $resendKey = self::getResendKey();
+        if (!empty($resendKey)) {
+            $from = "{$fromName} <{$fromAddress}>";
+            $res  = self::sendViaResend($resendKey, $from, $user->email, $subject, $html);
+            if ($res['success']) {
+                Log::info("Password reset code dispatched via Resend to {$user->email}");
+                return ['sent' => true, 'provider' => 'resend', 'sandbox_mode' => false, 'error' => null, 'code' => null];
+            }
+            Log::error("Resend dispatch failed for {$user->email}: " . ($res['error'] ?? 'unknown'));
+
+            if ($isProduction) {
+                return ['sent' => false, 'provider' => 'resend_failed', 'sandbox_mode' => false, 'error' => $res['error'], 'code' => null];
+            }
+            return ['sent' => false, 'provider' => 'resend_failed', 'sandbox_mode' => true, 'error' => $res['error'], 'code' => $code];
+        }
+
+        // ── 3. No provider configured ────────────────────────────────────────
         if ($isProduction) {
-            Log::error('Email delivery failed: RESEND_API_KEY is not configured.', [
-                '_SERVER_set'  => isset($_SERVER['RESEND_API_KEY']),
-                '_ENV_set'     => isset($_ENV['RESEND_API_KEY']),
-                'getenv_set'   => getenv('RESEND_API_KEY') !== false,
-                'config_set'   => !empty(config('services.resend.key')),
-                'APP_ENV'      => app()->environment(),
+            Log::error('Email delivery failed: no email provider configured (BREVO_API_KEY or RESEND_API_KEY required).', [
+                'brevo_set'  => !empty($brevoKey),
+                'resend_set' => !empty($resendKey),
+                'APP_ENV'    => app()->environment(),
             ]);
             return [
                 'sent'         => false,
@@ -110,32 +101,20 @@ class EmailDeliveryService
             ];
         }
 
-        // Local development sandbox mode
-        Log::info("Password reset code generated in local sandbox mode for {$user->username}: {$code}");
-        return [
-            'sent'         => false,
-            'provider'     => 'local_sandbox',
-            'sandbox_mode' => true,
-            'error'        => 'RESEND_API_KEY is not configured.',
-            'code'         => $code,
-        ];
+        // Local sandbox
+        Log::info("Password reset sandbox mode for {$user->username}: {$code}");
+        return ['sent' => false, 'provider' => 'local_sandbox', 'sandbox_mode' => true, 'error' => 'No email provider configured.', 'code' => $code];
     }
 
     /**
-     * Dispatch an alert notification email via Resend API.
+     * Dispatch an alert notification email.
      */
     public static function sendAlert(Notification $notification, User $recipient): bool
     {
-        $resendKey = self::getApiKey();
-        if (empty($resendKey)) {
-            Log::info("Alert notification #{$notification->notification_id} skipped email dispatch (RESEND_API_KEY not configured)");
-            return false;
-        }
-
         $subject = match ($notification->severity) {
             'critical' => '🚨 CRITICAL: ' . $notification->title,
-            'warning'  => '⚠️ WARNING: ' . $notification->title,
-            default    => 'ℹ️ INFO: ' . $notification->title,
+            'warning'  => '⚠️ WARNING: '  . $notification->title,
+            default    => 'ℹ️ INFO: '     . $notification->title,
         };
 
         $html = view('emails.alert-notification', [
@@ -143,20 +122,63 @@ class EmailDeliveryService
             'recipientName' => $recipient->fullName(),
         ])->render();
 
-        $from = self::resolveFromAddress();
+        $fromName = config('mail.from.name') ?: 'ArmoryDB - 10RCDG';
 
-        $res = self::sendViaResend($resendKey, $from, $recipient->email, $subject, $html);
-
-        if (!$res['success']) {
-            Log::warning("Failed to dispatch alert email via Resend to {$recipient->email}: " . ($res['error'] ?? 'unknown'));
-            return false;
+        // Try Brevo first
+        $brevoKey = self::getBrevoKey();
+        if (!empty($brevoKey)) {
+            $res = self::sendViaBrevo($brevoKey, $fromName, $recipient->email, $subject, $html);
+            if ($res['success']) return true;
+            Log::warning("Brevo alert failed to {$recipient->email}: " . ($res['error'] ?? 'unknown'));
         }
 
-        return true;
+        // Fallback to Resend
+        $resendKey = self::getResendKey();
+        if (!empty($resendKey)) {
+            $from = "{$fromName} <onboarding@resend.dev>";
+            $res  = self::sendViaResend($resendKey, $from, $recipient->email, $subject, $html);
+            if ($res['success']) return true;
+            Log::warning("Resend alert failed to {$recipient->email}: " . ($res['error'] ?? 'unknown'));
+        }
+
+        Log::info("Alert #{$notification->notification_id} skipped — no email provider configured.");
+        return false;
     }
 
     /**
-     * Send email via Resend REST API (HTTPS port 443).
+     * Send via Brevo (Sendinblue) Transactional Email API v3.
+     * Endpoint: POST https://api.brevo.com/v3/smtp/email
+     * Free tier: 300 emails/day, sends to ANY recipient, no domain verification needed.
+     *
+     * @return array{success: bool, error: ?string}
+     */
+    protected static function sendViaBrevo(string $apiKey, string $fromName, string $to, string $subject, string $html): array
+    {
+        try {
+            $response = Http::withHeaders([
+                'api-key'      => $apiKey,
+                'Content-Type' => 'application/json',
+                'Accept'       => 'application/json',
+            ])->timeout(10)->post('https://api.brevo.com/v3/smtp/email', [
+                'sender'      => ['name' => $fromName, 'email' => 'noreply@armorydb.app'],
+                'to'          => [['email' => $to]],
+                'subject'     => $subject,
+                'htmlContent' => $html,
+            ]);
+
+            if ($response->successful()) {
+                return ['success' => true, 'error' => null];
+            }
+
+            $errorMsg = $response->json('message') ?? $response->body();
+            return ['success' => false, 'error' => $errorMsg];
+        } catch (\Throwable $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Send via Resend REST API (HTTPS port 443).
      *
      * @return array{success: bool, error: ?string}
      */
@@ -177,34 +199,9 @@ class EmailDeliveryService
             }
 
             $errorMsg = $response->json('message') ?? $response->body();
-            return [
-                'success' => false,
-                'error'   => $errorMsg,
-            ];
+            return ['success' => false, 'error' => $errorMsg];
         } catch (\Throwable $e) {
             return ['success' => false, 'error' => $e->getMessage()];
         }
-    }
-
-    /**
-     * Resolve valid Resend sender address.
-     * Resend strictly requires onboarding@resend.dev unless a custom verified domain is used.
-     * Free webmail domains (gmail.com, yahoo.com) cannot be used as the sender on Resend.
-     */
-    public static function resolveFromAddress(): string
-    {
-        $explicit = config('services.resend.from') ?: env('RESEND_FROM_ADDRESS');
-        if (!empty($explicit) && !str_contains($explicit, '@gmail.com') && !str_contains($explicit, '@yahoo.com')) {
-            return $explicit;
-        }
-
-        $addr = config('mail.from.address');
-        $name = config('mail.from.name', 'ArmoryDB');
-
-        if (empty($addr) || str_contains($addr, 'gmail.com') || str_contains($addr, 'yahoo.com') || str_contains($addr, 'example.com')) {
-            return "{$name} <onboarding@resend.dev>";
-        }
-
-        return "{$name} <{$addr}>";
     }
 }
