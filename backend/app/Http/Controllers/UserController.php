@@ -61,6 +61,7 @@ class UserController extends Controller
         $user = User::findOrFail($id);
 
         $data = $request->validate([
+            'username'           => ['sometimes', 'string', 'max:50', Rule::unique('users', 'username')->ignore($user->user_id, 'user_id')],
             'email'              => ['sometimes', 'email', 'max:100', Rule::unique('users', 'email')->ignore($user->user_id, 'user_id')],
             'first_name'         => ['sometimes', 'string', 'max:50'],
             'last_name'          => ['sometimes', 'string', 'max:50'],
