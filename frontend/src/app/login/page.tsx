@@ -398,6 +398,7 @@ export default function LoginPage() {
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     placeholder="username or email@domain.com"
+                    tabIndex={1}
                   />
                 </div>
 
@@ -412,6 +413,7 @@ export default function LoginPage() {
                       if (username) setResetIdentifier(username);
                       setMode("forgot_request");
                     }}
+                    tabIndex={3}
                     className="text-xs text-olive-400 hover:text-olive-200 transition-colors focus:outline-none underline-offset-4 hover:underline"
                   >
                     Forgot password?
@@ -427,6 +429,7 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
+                    tabIndex={2}
                   />
                   <button
                     type="button"
@@ -448,7 +451,7 @@ export default function LoginPage() {
                   </div>
                 )}
 
-                <button type="submit" disabled={loading} className="btn-primary w-full mt-6">
+                <button type="submit" disabled={loading} className="btn-primary w-full mt-6" tabIndex={4}>
                   {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                   {submitLabel}
                 </button>
