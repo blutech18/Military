@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -126,6 +126,8 @@ export default function LoginPage() {
   const [resetIdentifier, setResetIdentifier] = useState("");
   const [resetToken, setResetToken] = useState("");
   const [resetCode, setResetCode] = useState("");
+  const [resetDigits, setResetDigits] = useState<string[]>(Array(6).fill(""));
+  const otpInputsRef = useRef<Array<HTMLInputElement | null>>([]);
   const [maskedEmail, setMaskedEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -142,6 +144,80 @@ export default function LoginPage() {
     }, 1000);
     return () => clearInterval(interval);
   }, [resendCooldown]);
+
+  // Auto-focus first OTP box when entering forgot_verify mode
+  useEffect(() => {
+    if (mode === "forgot_verify") {
+      const timer = setTimeout(() => {
+        otpInputsRef.current[0]?.focus();
+      }, 80);
+      return () => clearTimeout(timer);
+    }
+  }, [mode]);
+
+  function handleOtpChange(index: number, val: string) {
+    const sanitized = val.replace(/\D/g, "");
+    if (!sanitized) {
+      const next = [...resetDigits];
+      next[index] = "";
+      setResetDigits(next);
+      setResetCode(next.join(""));
+      return;
+    }
+
+    if (sanitized.length > 1) {
+      const chars = sanitized.slice(0, 6).split("");
+      const next = [...resetDigits];
+      chars.forEach((char, idx) => {
+        if (index + idx < 6) {
+          next[index + idx] = char;
+        }
+      });
+      setResetDigits(next);
+      setResetCode(next.join(""));
+      const nextFocus = Math.min(index + chars.length, 5);
+      otpInputsRef.current[nextFocus]?.focus();
+      return;
+    }
+
+    const next = [...resetDigits];
+    next[index] = sanitized;
+    setResetDigits(next);
+    setResetCode(next.join(""));
+    if (index < 5) {
+      otpInputsRef.current[index + 1]?.focus();
+    }
+  }
+
+  function handleOtpKeyDown(index: number, e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Backspace") {
+      if (!resetDigits[index] && index > 0) {
+        otpInputsRef.current[index - 1]?.focus();
+        const next = [...resetDigits];
+        next[index - 1] = "";
+        setResetDigits(next);
+        setResetCode(next.join(""));
+      }
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      otpInputsRef.current[index - 1]?.focus();
+    } else if (e.key === "ArrowRight" && index < 5) {
+      otpInputsRef.current[index + 1]?.focus();
+    }
+  }
+
+  function handleOtpPaste(e: React.ClipboardEvent) {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!pasted) return;
+    const next = Array(6).fill("");
+    for (let i = 0; i < pasted.length; i++) {
+      next[i] = pasted[i];
+    }
+    setResetDigits(next);
+    setResetCode(next.join(""));
+    const focusTarget = Math.min(pasted.length, 5);
+    otpInputsRef.current[focusTarget]?.focus();
+  }
 
   const { data: authRequirements, isLoading: loadingRequirements } = useQuery<AuthRequirements>({
     queryKey: ["auth-requirements"],
@@ -226,6 +302,7 @@ export default function LoginPage() {
       setMaskedEmail(data.masked_email);
       setResendCooldown(60);
       setResetCode("");
+      setResetDigits(Array(6).fill(""));
       setMode("forgot_verify");
       toast.success(data.message || "Verification code dispatched.");
     } catch (error: unknown) {
@@ -250,6 +327,9 @@ export default function LoginPage() {
       setResetToken(data.reset_token);
       setMaskedEmail(data.masked_email);
       setResendCooldown(60);
+      setResetCode("");
+      setResetDigits(Array(6).fill(""));
+      setTimeout(() => otpInputsRef.current[0]?.focus(), 50);
       toast.success(data.message || "A new verification code has been dispatched.");
     } catch (error: unknown) {
       if (error instanceof AxiosError) {
@@ -323,6 +403,7 @@ export default function LoginPage() {
       }
       setPassword("");
       setResetCode("");
+      setResetDigits(Array(6).fill(""));
       setNewPassword("");
       setConfirmPassword("");
       setMode("login");
@@ -531,7 +612,11 @@ export default function LoginPage() {
               >
                 <button
                   type="button"
-                  onClick={() => setMode("forgot_request")}
+                  onClick={() => {
+                    setResetDigits(Array(6).fill(""));
+                    setResetCode("");
+                    setMode("forgot_request");
+                  }}
                   className="inline-flex items-center gap-1.5 text-xs text-steel-400 hover:text-olive-300 transition-colors mb-4 focus:outline-none"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
@@ -544,8 +629,8 @@ export default function LoginPage() {
                     Enter the 6-digit authorization code dispatched to{" "}
                     <span className="font-mono text-olive-200">{maskedEmail || resetIdentifier}</span>.
                   </p>
-                  <div className="mt-3 flex items-start gap-2 rounded-md border border-yellow-700/40 bg-yellow-900/20 px-3 py-2.5">
-                    <p className="text-xs text-yellow-300/80 leading-relaxed">
+                  <div className="mt-3 rounded-md border border-yellow-700/40 bg-yellow-900/20 px-3 py-2.5 text-center">
+                    <p className="text-xs text-yellow-300/80 leading-relaxed text-center">
                       If you don&apos;t see the email in your inbox, please check your{" "}
                       <span className="font-semibold text-yellow-200">Spam</span> or{" "}
                       <span className="font-semibold text-yellow-200">Junk</span> folder.
@@ -553,9 +638,8 @@ export default function LoginPage() {
                   </div>
                 </div>
 
-
                 {/* 6-digit Code Input */}
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-2">
                   <label className="block text-xs uppercase tracking-widest text-olive-300">
                     6-Digit Code
                   </label>
@@ -568,20 +652,25 @@ export default function LoginPage() {
                     {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : "Resend code"}
                   </button>
                 </div>
-                <div className="relative mb-6">
-                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-steel-400" />
-                  <input
-                    required
-                    autoFocus
-                    maxLength={6}
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    className="input-field pl-9 font-mono tracking-widest text-base text-center"
-                    value={resetCode}
-                    onChange={(e) => setResetCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    placeholder="••••••"
-                  />
+                <div
+                  className="grid grid-cols-6 gap-2 sm:gap-2.5 mb-6"
+                  onPaste={handleOtpPaste}
+                >
+                  {resetDigits.map((digit, i) => (
+                    <input
+                      key={i}
+                      ref={(el) => {
+                        otpInputsRef.current[i] = el;
+                      }}
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={digit}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => handleOtpChange(i, e.target.value)}
+                      onKeyDown={(e) => handleOtpKeyDown(i, e)}
+                      className="input-field text-center text-xl sm:text-2xl font-mono font-bold h-12 sm:h-14 px-0 selection:bg-transparent"
+                    />
+                  ))}
                 </div>
 
                 <button
@@ -596,7 +685,11 @@ export default function LoginPage() {
                 <div className="mt-4 text-center">
                   <button
                     type="button"
-                    onClick={() => setMode("login")}
+                    onClick={() => {
+                      setResetDigits(Array(6).fill(""));
+                      setResetCode("");
+                      setMode("login");
+                    }}
                     className="text-xs text-steel-400 hover:text-olive-300 transition-colors"
                   >
                     Cancel and return to Sign In

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound, Fingerprint, Lock, Loader2, AlertTriangle, X, Timer } from "lucide-react";
+import { KeyRound, Fingerprint, Lock, Loader2, AlertTriangle, X, Timer, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/store/auth";
@@ -48,10 +48,13 @@ export default function SettingsPage() {
 
 function PasswordChangeSection() {
   const [currentPassword, setCurrentPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [verified, setVerified] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function verifyCurrentPassword(e: React.FormEvent) {
@@ -92,6 +95,9 @@ function PasswordChangeSection() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
       setVerified(false);
     } catch (e: any) {
       toast.error(e.response?.data?.message ?? "Password change failed.");
@@ -112,14 +118,25 @@ function PasswordChangeSection() {
         <form onSubmit={verifyCurrentPassword}>
           <p className="text-sm text-steel-400 mb-3">Enter your current password to proceed.</p>
           <div className="flex gap-3 items-start">
-            <input
-              className="input-field max-w-sm"
-              type="password"
-              required
-              placeholder="Current password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-            />
+            <div className="relative flex-1 max-w-sm">
+              <input
+                className="input-field w-full pr-10"
+                type={showCurrentPassword ? "text" : "password"}
+                required
+                placeholder="Current password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                tabIndex={-1}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 hover:text-olive-300 transition-colors p-1"
+                aria-label={showCurrentPassword ? "Hide password" : "Show password"}
+              >
+                {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
             <button disabled={verifying} className="btn-primary shrink-0">
               {verifying && <Loader2 className="h-4 w-4 animate-spin" />} Verify
             </button>
@@ -134,22 +151,44 @@ function PasswordChangeSection() {
         >
           <p className="text-sm text-green-400 mb-3">✓ Password verified. Enter your new password below.</p>
           <div className="grid md:grid-cols-2 gap-3">
-            <input
-              className="input-field"
-              type="password"
-              required
-              placeholder="New password (≥10 chars)"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-            />
-            <input
-              className="input-field"
-              type="password"
-              required
-              placeholder="Confirm new password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-            />
+            <div className="relative">
+              <input
+                className="input-field w-full pr-10"
+                type={showNewPassword ? "text" : "password"}
+                required
+                placeholder="New password (≥10 chars)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword(!showNewPassword)}
+                tabIndex={-1}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 hover:text-olive-300 transition-colors p-1"
+                aria-label={showNewPassword ? "Hide password" : "Show password"}
+              >
+                {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            <div className="relative">
+              <input
+                className="input-field w-full pr-10"
+                type={showConfirmPassword ? "text" : "password"}
+                required
+                placeholder="Confirm new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                tabIndex={-1}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-steel-400 hover:text-olive-300 transition-colors p-1"
+                aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+              >
+                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
           <div className="flex gap-2 mt-3">
             <button disabled={loading} className="btn-primary">
@@ -157,7 +196,14 @@ function PasswordChangeSection() {
             </button>
             <button
               type="button"
-              onClick={() => { setVerified(false); setNewPassword(""); setConfirmPassword(""); }}
+              onClick={() => {
+                setVerified(false);
+                setNewPassword("");
+                setConfirmPassword("");
+                setShowCurrentPassword(false);
+                setShowNewPassword(false);
+                setShowConfirmPassword(false);
+              }}
               className="btn-secondary text-xs"
             >
               Cancel
