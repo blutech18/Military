@@ -2,9 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Download, Crosshair, History, Wrench } from "lucide-react";
+import { ArrowLeft, Download, Crosshair, History, Wrench, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { CONDITIONS, STATUSES, fmtDate, PURPOSES } from "@/lib/utils";
 import { DataError } from "@/components/ui/data-error";
@@ -13,6 +13,7 @@ export default function FirearmDetailPage() {
   const router = useRouter();
   const { id } = useParams() as { id: string };
   const [qrSvg, setQrSvg] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["firearm", id],
@@ -20,9 +21,22 @@ export default function FirearmDetailPage() {
   });
 
   async function loadQr() {
-    const resp = await api.get(`/firearms/${id}/qr`, { responseType: "text" });
-    setQrSvg(resp.data);
+    setQrLoading(true);
+    try {
+      const resp = await api.get(`/firearms/${id}/qr`, { responseType: "text" });
+      setQrSvg(resp.data);
+    } catch {
+      // ignore
+    } finally {
+      setQrLoading(false);
+    }
   }
+
+  useEffect(() => {
+    if (id) {
+      loadQr();
+    }
+  }, [id]);
 
   if (isError) return <DataError onRetry={refetch} />;
   if (isLoading || !data) return <p className="text-steel-300">Loading…</p>;
@@ -62,8 +76,13 @@ export default function FirearmDetailPage() {
         <div className="glass rounded-xl p-4 flex flex-col">
           <p className="section-title mb-2">QR Identification</p>
           <motion.div layout className="bg-steel-900/60 rounded-md p-4 flex-1 flex items-center justify-center min-h-[260px]">
-            {qrSvg ? (
-              <div className="w-full max-w-[260px]" dangerouslySetInnerHTML={{ __html: qrSvg }} />
+            {qrLoading ? (
+              <div className="flex flex-col items-center gap-2 text-steel-400 text-xs">
+                <Loader2 className="h-6 w-6 animate-spin text-olive-400" />
+                <span>Generating dynamic QR…</span>
+              </div>
+            ) : qrSvg ? (
+              <div className="w-full max-w-[240px] bg-white p-3 rounded-lg shadow-md flex items-center justify-center" dangerouslySetInnerHTML={{ __html: qrSvg }} />
             ) : (
               <button onClick={loadQr} className="btn-primary"><Download className="h-4 w-4" /> Generate QR Code</button>
             )}
