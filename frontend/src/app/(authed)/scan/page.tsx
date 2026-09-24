@@ -30,6 +30,10 @@ import {
   SlidersHorizontal,
   History,
   ShieldAlert,
+  Barcode,
+  Zap,
+  X,
+  CornerDownLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -82,6 +86,7 @@ export default function ScanPage() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scannerRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const manualInputRef = useRef<HTMLInputElement | null>(null);
 
   // Mode: "camera" | "manual" | "file"
   const [mode, setMode] = useState<"camera" | "manual" | "file">("camera");
@@ -298,6 +303,16 @@ export default function ScanPage() {
       stopCamera();
     };
   }, [mode, selectedCameraId, startCamera, stopCamera]);
+
+  // Auto-focus barcode input when switching to manual/wedge mode
+  useEffect(() => {
+    if (mode === "manual") {
+      const timer = setTimeout(() => {
+        manualInputRef.current?.focus();
+      }, 60);
+      return () => clearTimeout(timer);
+    }
+  }, [mode]);
 
   // Handle image file scan
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -524,15 +539,34 @@ export default function ScanPage() {
 
             {/* TAB 2: MANUAL / USB BARCODE SCANNER WEDGE */}
             {mode === "manual" && (
-              <div className="flex-1 flex flex-col justify-between py-1 space-y-4">
-                <div className="space-y-4">
-                  <div className="p-4 rounded-lg bg-steel-900/60 border border-olive-700/30 space-y-3">
+              <div className="flex-1 flex flex-col justify-between space-y-3.5">
+                <div className="space-y-3.5">
+                  {/* Status Strip */}
+                  <div className="flex items-center justify-between px-3.5 py-2 rounded-lg bg-steel-900/80 border border-olive-700/30 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                      </span>
+                      <span className="font-semibold text-olive-100 uppercase tracking-wider text-[11px]">
+                        Hardware Wedge Active
+                      </span>
+                    </div>
+                    <span className="font-mono text-[10px] text-steel-400 bg-steel-800/80 px-2 py-0.5 rounded border border-olive-700/20">
+                      USB / Bluetooth HID
+                    </span>
+                  </div>
+
+                  {/* Input Console */}
+                  <div className="p-4 rounded-xl bg-steel-900/70 border border-olive-700/40 space-y-3 shadow-inner">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-olive-100 flex items-center gap-1.5">
-                        <Keyboard className="h-4 w-4 text-olive-300" />
-                        Barcode Gun Wedge / Serial Number Input
+                        <Barcode className="h-4 w-4 text-olive-300" />
+                        Barcode Gun / Serial Input
                       </label>
-                      <span className="text-[10px] text-steel-400 font-mono">Press ENTER to Search</span>
+                      <span className="text-[10px] text-steel-400 font-mono flex items-center gap-1">
+                        <CornerDownLeft className="h-3 w-3 text-olive-400" /> Press ENTER to Search
+                      </span>
                     </div>
 
                     <form
@@ -544,48 +578,113 @@ export default function ScanPage() {
                     >
                       <div className="relative flex-1">
                         <input
+                          ref={manualInputRef}
                           type="text"
                           autoFocus
                           value={manualInput}
                           onChange={(e) => setManualInput(e.target.value)}
-                          placeholder="Scan with barcode gun or type serial (e.g. PA-M4-001)..."
-                          className="input font-mono text-sm w-full pl-9 bg-steel-800 border-olive-700/50"
+                          placeholder="Scan weapon barcode or type serial (e.g. PA-M4-001)..."
+                          className="input font-mono text-sm w-full pl-9 pr-8 bg-steel-800/90 border-olive-700/50 focus:border-olive-400 focus:ring-1 focus:ring-olive-400/40"
                         />
                         <Search className="h-4 w-4 text-steel-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        {manualInput && (
+                          <button
+                            type="button"
+                            onClick={() => setManualInput("")}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-steel-400 hover:text-steel-200 p-0.5 rounded transition-colors"
+                            title="Clear input"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
-                      <button type="submit" disabled={loading || !manualInput.trim()} className="btn-primary text-xs px-4">
-                        {loading ? "Searching..." : "Lookup"}
+                      <button
+                        type="submit"
+                        disabled={loading || !manualInput.trim()}
+                        className="btn-primary text-xs px-4 flex items-center gap-1.5 shrink-0"
+                      >
+                        {loading ? (
+                          <>
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                            <span>Searching...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Search className="h-3.5 w-3.5" />
+                            <span>Lookup</span>
+                          </>
+                        )}
                       </button>
                     </form>
-
-                    <p className="text-[11px] text-steel-400">
-                      💡 Handheld USB/Bluetooth barcode guns input characters and automatically submit on newline. Keep this field focused when scanning physically.
-                    </p>
                   </div>
 
-                  {/* Quick Test Chips */}
-                  <div className="space-y-1.5 pt-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-steel-400">Quick Test Weapon Serials:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {["PA-M4-001", "PA-M4-002", "PA-M16-001", "PA-M16-002", "PA-PI-001"].map((s) => (
+                  {/* Quick Test Bench Chips */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-steel-400">
+                        Armory Weapon Presets:
+                      </p>
+                      <span className="text-[10px] text-steel-500 font-mono">Click to test instant lookup</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {[
+                        { serial: "PA-M4-001", model: "Colt M4A1" },
+                        { serial: "PA-M4-002", model: "Colt M4A1" },
+                        { serial: "PA-M16-001", model: "Elisco M16A1" },
+                        { serial: "PA-M16-002", model: "Elisco M16A1" },
+                        { serial: "PA-PI-001", model: "Beretta 92FS" },
+                      ].map((item) => (
                         <button
-                          key={s}
+                          key={item.serial}
+                          type="button"
                           onClick={() => {
-                            setManualInput(s);
-                            performLookup(s);
+                            setManualInput(item.serial);
+                            performLookup(item.serial);
                           }}
-                          className="px-2.5 py-1 rounded bg-steel-800 hover:bg-tactical-surface border border-olive-700/30 text-xs font-mono text-olive-300 hover:text-olive-100 transition-colors"
+                          className="group p-2 rounded-lg bg-steel-900/60 hover:bg-tactical-surface border border-olive-700/30 hover:border-olive-500/50 text-left transition-all flex flex-col justify-between"
                         >
-                          {s}
+                          <span className="text-xs font-mono font-semibold text-olive-300 group-hover:text-olive-100 transition-colors">
+                            {item.serial}
+                          </span>
+                          <span className="text-[10px] text-steel-400 group-hover:text-steel-300 transition-colors truncate">
+                            {item.model}
+                          </span>
                         </button>
                       ))}
                     </div>
                   </div>
+
+                  {/* Operation Guide Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                    <div className="p-2.5 rounded-lg bg-steel-900/40 border border-olive-700/20 text-xs space-y-1">
+                      <div className="flex items-center gap-1.5 text-olive-200 font-semibold text-[11px]">
+                        <Zap className="h-3.5 w-3.5 text-tactical-accent" />
+                        <span>Rapid Barcode Trigger</span>
+                      </div>
+                      <p className="text-[11px] text-steel-400 leading-relaxed">
+                        Handheld 1D/2D guns automatically submit on newline. Keep this tab active while scanning weapon tags.
+                      </p>
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-steel-900/40 border border-olive-700/20 text-xs space-y-1">
+                      <div className="flex items-center gap-1.5 text-olive-200 font-semibold text-[11px]">
+                        <Keyboard className="h-3.5 w-3.5 text-olive-300" />
+                        <span>Manual Fallback</span>
+                      </div>
+                      <p className="text-[11px] text-steel-400 leading-relaxed">
+                        If barcode is scuffed or obscured, type the receiver serial number directly to pull complete armory records.
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="p-3 rounded-lg bg-steel-950/40 border border-olive-700/20 text-xs text-steel-400 flex items-center gap-2 mt-auto">
+                {/* Footer Compatibility Banner */}
+                <div className="p-2.5 rounded-lg bg-steel-950/60 border border-olive-700/25 text-xs text-steel-400 flex items-center gap-2.5 mt-auto">
                   <ShieldCheck className="h-4 w-4 text-olive-400 shrink-0" />
-                  <span>Hardware wedge mode supports direct serial scanning from physical barcode readers without requiring camera permissions.</span>
+                  <p className="text-[11px] text-steel-400 leading-tight">
+                    Hardware wedge mode accepts input from all USB and Bluetooth scanners operating in standard HID keyboard wedge mode.
+                  </p>
                 </div>
               </div>
             )}
