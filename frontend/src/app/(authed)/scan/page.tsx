@@ -370,12 +370,12 @@ export default function ScanPage() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-12 gap-5">
+      <div className="grid lg:grid-cols-12 gap-5 items-stretch">
         {/* LEFT COLUMN: SCANNER VIEWPORT & INPUT MODES (7 cols) */}
-        <div className="lg:col-span-7 space-y-4">
-          <div className="glass rounded-xl p-4 sm:p-5 space-y-4">
+        <div className="lg:col-span-7 flex flex-col">
+          <div className="glass rounded-xl p-4 sm:p-5 flex-1 flex flex-col justify-between lg:min-h-[540px]">
             {/* Mode Switcher Tabs */}
-            <div className="flex items-center justify-between border-b border-olive-700/30 pb-3">
+            <div className="flex items-center justify-between border-b border-olive-700/30 pb-3 mb-4">
               <div className="flex items-center gap-1.5 bg-steel-900/90 p-1 rounded-lg border border-olive-700/30">
                 <button
                   onClick={() => setMode("camera")}
@@ -442,7 +442,7 @@ export default function ScanPage() {
 
             {/* TAB 1: LIVE CAMERA VIEWPORT */}
             {mode === "camera" && (
-              <div className="space-y-3">
+              <div className="flex-1 flex flex-col justify-between space-y-3">
                 <div className="relative aspect-video sm:aspect-[4/3] w-full max-h-[420px] mx-auto overflow-hidden rounded-lg bg-black border border-olive-700/50 shadow-inner flex items-center justify-center">
                   {/* HTML5 QR Code Mount Target */}
                   <div id="qr-camera-viewport" ref={containerRef} className="absolute inset-0 w-full h-full" />
@@ -486,7 +486,7 @@ export default function ScanPage() {
                 </div>
 
                 {/* Camera Hardware Controls */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs mt-auto">
                   {availableCameras.length > 1 && (
                     <div className="flex items-center gap-1.5">
                       <SlidersHorizontal className="h-3.5 w-3.5 text-steel-400" />
@@ -523,81 +523,88 @@ export default function ScanPage() {
 
             {/* TAB 2: MANUAL / USB BARCODE SCANNER WEDGE */}
             {mode === "manual" && (
-              <div className="space-y-4 py-2">
-                <div className="p-4 rounded-lg bg-steel-900/60 border border-olive-700/30 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold text-olive-100 flex items-center gap-1.5">
-                      <Keyboard className="h-4 w-4 text-olive-300" />
-                      Barcode Gun Wedge / Serial Number Input
-                    </label>
-                    <span className="text-[10px] text-steel-400 font-mono">Press ENTER to Search</span>
+              <div className="flex-1 flex flex-col justify-between py-1 space-y-4">
+                <div className="space-y-4">
+                  <div className="p-4 rounded-lg bg-steel-900/60 border border-olive-700/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-olive-100 flex items-center gap-1.5">
+                        <Keyboard className="h-4 w-4 text-olive-300" />
+                        Barcode Gun Wedge / Serial Number Input
+                      </label>
+                      <span className="text-[10px] text-steel-400 font-mono">Press ENTER to Search</span>
+                    </div>
+
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        performLookup(manualInput);
+                      }}
+                      className="flex gap-2"
+                    >
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          autoFocus
+                          value={manualInput}
+                          onChange={(e) => setManualInput(e.target.value)}
+                          placeholder="Scan with barcode gun or type serial (e.g. PA-M4-001)..."
+                          className="input font-mono text-sm w-full pl-9 bg-steel-800 border-olive-700/50"
+                        />
+                        <Search className="h-4 w-4 text-steel-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      </div>
+                      <button type="submit" disabled={loading || !manualInput.trim()} className="btn-primary text-xs px-4">
+                        {loading ? "Searching..." : "Lookup"}
+                      </button>
+                    </form>
+
+                    <p className="text-[11px] text-steel-400">
+                      💡 Handheld USB/Bluetooth barcode guns input characters and automatically submit on newline. Keep this field focused when scanning physically.
+                    </p>
                   </div>
 
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      performLookup(manualInput);
-                    }}
-                    className="flex gap-2"
-                  >
-                    <div className="relative flex-1">
-                      <input
-                        type="text"
-                        autoFocus
-                        value={manualInput}
-                        onChange={(e) => setManualInput(e.target.value)}
-                        placeholder="Scan with barcode gun or type serial (e.g. PA-M4-001)..."
-                        className="input font-mono text-sm w-full pl-9 bg-steel-800 border-olive-700/50"
-                      />
-                      <Search className="h-4 w-4 text-steel-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  {/* Quick Test Chips */}
+                  <div className="space-y-1.5 pt-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-steel-400">Quick Test Weapon Serials:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {["PA-M4-001", "PA-M4-002", "PA-M16-001", "PA-M16-002", "PA-PI-001"].map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => {
+                            setManualInput(s);
+                            performLookup(s);
+                          }}
+                          className="px-2.5 py-1 rounded bg-steel-800 hover:bg-tactical-surface border border-olive-700/30 text-xs font-mono text-olive-300 hover:text-olive-100 transition-colors"
+                        >
+                          {s}
+                        </button>
+                      ))}
                     </div>
-                    <button type="submit" disabled={loading || !manualInput.trim()} className="btn-primary text-xs px-4">
-                      {loading ? "Searching..." : "Lookup"}
-                    </button>
-                  </form>
-
-                  <p className="text-[11px] text-steel-400">
-                    💡 Handheld USB/Bluetooth barcode guns input characters and automatically submit on newline. Keep this field focused when scanning physically.
-                  </p>
+                  </div>
                 </div>
 
-                {/* Quick Test Chips */}
-                <div className="space-y-1.5 pt-1">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-steel-400">Quick Test Weapon Serials:</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {["PA-M4-001", "PA-M4-002", "PA-M16-001", "PA-M16-002", "PA-PI-001"].map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => {
-                          setManualInput(s);
-                          performLookup(s);
-                        }}
-                        className="px-2.5 py-1 rounded bg-steel-800 hover:bg-tactical-surface border border-olive-700/30 text-xs font-mono text-olive-300 hover:text-olive-100 transition-colors"
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
+                <div className="p-3 rounded-lg bg-steel-950/40 border border-olive-700/20 text-xs text-steel-400 flex items-center gap-2 mt-auto">
+                  <ShieldCheck className="h-4 w-4 text-olive-400 shrink-0" />
+                  <span>Hardware wedge mode supports direct serial scanning from physical barcode readers without requiring camera permissions.</span>
                 </div>
               </div>
             )}
 
             {/* TAB 3: UPLOAD QR IMAGE FILE */}
             {mode === "file" && (
-              <div className="space-y-4 py-3">
+              <div className="flex-1 flex flex-col justify-center py-1">
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-olive-700/50 hover:border-olive-400/80 rounded-xl p-8 text-center cursor-pointer bg-steel-900/40 hover:bg-steel-900/70 transition-all space-y-3"
+                  className="border-2 border-dashed border-olive-700/50 hover:border-olive-400/80 rounded-xl p-8 text-center cursor-pointer bg-steel-900/40 hover:bg-steel-900/70 transition-all flex-1 flex flex-col items-center justify-center space-y-3 min-h-[340px]"
                 >
                   <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
-                  <div className="h-12 w-12 mx-auto rounded-full bg-tactical-surface border border-olive-500/40 flex items-center justify-center text-olive-300">
-                    <UploadCloud className="h-6 w-6" />
+                  <div className="h-14 w-14 rounded-full bg-tactical-surface border border-olive-500/40 flex items-center justify-center text-olive-300 shadow-inner">
+                    <UploadCloud className="h-7 w-7" />
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-olive-100">Click to upload or drag & drop QR image</p>
-                    <p className="text-xs text-steel-400 mt-0.5">Supports PNG, JPG, WEBP photos of firearm tags or labels</p>
+                    <p className="text-xs text-steel-400 mt-1">Supports PNG, JPG, WEBP photos of firearm tags or labels</p>
                   </div>
-                  <button type="button" className="btn-secondary text-xs">
+                  <button type="button" className="btn-secondary text-xs mt-2">
                     Browse Image
                   </button>
                 </div>
@@ -607,8 +614,8 @@ export default function ScanPage() {
         </div>
 
         {/* RIGHT COLUMN: FIREARM DOSSIER & LOOKUP RESULT (5 cols) */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="glass rounded-xl p-4 sm:p-5 min-h-[460px] flex flex-col">
+        <div className="lg:col-span-5 flex flex-col">
+          <div className="glass rounded-xl p-4 sm:p-5 flex-1 flex flex-col justify-between lg:min-h-[540px]">
             <div className="flex items-center justify-between border-b border-olive-700/30 pb-3 mb-4">
               <p className="section-title flex items-center gap-2 m-0">
                 <ShieldCheck className="h-4 w-4 text-olive-300" /> Firearm Dossier
@@ -714,7 +721,7 @@ export default function ScanPage() {
                   </div>
 
                   {/* Operational Action Buttons */}
-                  <div className="space-y-2 pt-2 border-t border-olive-700/20">
+                  <div className="space-y-2 pt-3 border-t border-olive-700/20 mt-auto">
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={() => router.push(`/transactions/new?equipment_id=${hit.equipment_id}`)}
