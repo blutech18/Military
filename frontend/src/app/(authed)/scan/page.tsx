@@ -170,76 +170,123 @@ export default function ScanPage() {
     [handleResolve]
   );
 
-  // Initialize and run HTML5 QR scanner
-  const startCamera = useCallback(
-    async (cameraId?: string) => {
-      if (!containerRef.current) return;
-      setCameraError(null);
+  // Stable ref for performLookup to avoid triggering camera restarts
+  const performLookupRef = useRef(performLookup);
+  useEffect(() => {
+    performLookupRef.current = performLookup;
+  }, [performLookup]);
 
+  const lastScanRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
+  const isStartingRef = useRef(false);
+
+  // Enumerate cameras once on mount without triggering camera restarts
+  useEffect(() => {
+    let active = true;
+    (async () => {
       try {
         const { Html5Qrcode } = await import("html5-qrcode");
-
-        // Stop existing instance if any
-        if (scannerRef.current) {
-          try {
-            await scannerRef.current.stop();
-            scannerRef.current.clear();
-          } catch {}
-          scannerRef.current = null;
+        const devices = await Html5Qrcode.getCameras();
+        if (active && devices && devices.length > 0) {
+          const list = devices.map((d) => ({
+            id: d.id,
+            label: d.label || `Camera ${d.id.slice(0, 5)}`,
+          }));
+          setAvailableCameras(list);
+          setSelectedCameraId((prev) => prev || list[0].id);
         }
+      } catch (err) {
+        console.warn("Could not enumerate cameras:", err);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
-        const scanner = new Html5Qrcode("qr-camera-viewport");
-        scannerRef.current = scanner;
+  // Stable camera starter
+  const startCamera = useCallback(async (cameraId?: string) => {
+    if (isStartingRef.current) return;
+    isStartingRef.current = true;
+    setCameraError(null);
 
-        // Fetch camera devices list if not fetched yet
+    try {
+      const { Html5Qrcode } = await import("html5-qrcode");
+
+      // Safely tear down existing instance if any
+      if (scannerRef.current) {
+        const prev = scannerRef.current;
+        scannerRef.current = null;
         try {
-          const devices = await Html5Qrcode.getCameras();
-          if (devices && devices.length > 0) {
-            setAvailableCameras(devices.map((d) => ({ id: d.id, label: d.label || `Camera ${d.id.slice(0, 5)}` })));
+          if (prev.isScanning) {
+            await prev.stop();
           }
         } catch {}
-
-        const targetCamera = cameraId || (availableCameras.length > 0 ? availableCameras[0].id : { facingMode: "environment" });
-
-        await scanner.start(
-          targetCamera,
-          {
-            fps: 10,
-          },
-          async (decodedText: string) => {
-            await performLookup(decodedText);
-          },
-          () => {
-            // Ignore decode failures on empty frames
-          }
-        );
-
-        setScanning(true);
-      } catch (err: any) {
-        console.error("Camera error:", err);
-        setScanning(false);
-        setCameraError(
-          err?.message?.includes("Permission")
-            ? "Camera permission denied. Please allow camera access in browser settings."
-            : "Could not start camera. Check connection or switch to Manual / USB mode."
-        );
+        try {
+          prev.clear();
+        } catch {}
       }
-    },
-    [availableCameras, performLookup]
-  );
 
+      const viewport = document.getElementById("qr-camera-viewport");
+      if (!viewport) {
+        isStartingRef.current = false;
+        return;
+      }
+
+      const scanner = new Html5Qrcode("qr-camera-viewport");
+      scannerRef.current = scanner;
+
+      const targetCamera = cameraId ? cameraId : { facingMode: "environment" };
+
+      await scanner.start(
+        targetCamera,
+        {
+          fps: 15,
+        },
+        async (decodedText: string) => {
+          const now = Date.now();
+          if (decodedText === lastScanRef.current.text && now - lastScanRef.current.time < 3000) {
+            return;
+          }
+          lastScanRef.current = { text: decodedText, time: now };
+          await performLookupRef.current(decodedText);
+        },
+        () => {
+          // Ignore empty frames
+        }
+      );
+
+      setScanning(true);
+    } catch (err: any) {
+      console.error("Camera error:", err);
+      setScanning(false);
+      setCameraError(
+        err?.message?.includes("Permission")
+          ? "Camera permission denied. Please allow camera access in browser settings."
+          : "Could not start camera. Check connection or switch to Manual / USB mode."
+      );
+    } finally {
+      isStartingRef.current = false;
+    }
+  }, []);
+
+  // Stable camera stopper
   const stopCamera = useCallback(async () => {
     if (scannerRef.current) {
-      try {
-        await scannerRef.current.stop();
-        scannerRef.current.clear();
-      } catch {}
+      const prev = scannerRef.current;
       scannerRef.current = null;
+      try {
+        if (prev.isScanning) {
+          await prev.stop();
+        }
+      } catch {}
+      try {
+        prev.clear();
+      } catch {}
     }
     setScanning(false);
   }, []);
 
-  // Manage camera lifecycle based on selected mode
+  // Manage camera lifecycle strictly based on mode and selected camera id
   useEffect(() => {
     if (mode === "camera") {
       startCamera(selectedCameraId || undefined);
@@ -438,7 +485,6 @@ export default function ScanPage() {
                         value={selectedCameraId}
                         onChange={(e) => {
                           setSelectedCameraId(e.target.value);
-                          startCamera(e.target.value);
                         }}
                         className="bg-steel-800 border border-olive-700/40 rounded px-2 py-1 text-xs text-olive-100"
                       >
