@@ -56,7 +56,9 @@ class FirearmController extends Controller
         $currentStatuses = [Transaction::STATUS_ACTIVE, Transaction::STATUS_OVERDUE];
         $relations = ['category', 'currentLocation'];
         if (! $isPersonnel) {
+            $relations['transactions'] = fn($query) => $query->latest('checkout_at');
             $relations[] = 'transactions.user';
+            $relations[] = 'transactions.authorizer';
         }
 
         $firearm = FirearmEquipment::with($relations)
