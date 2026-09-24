@@ -8,10 +8,10 @@ import {
   Camera,
   CameraOff,
   ScanLine,
+  QrCode,
   ShieldCheck,
   AlertCircle,
   ClipboardCheck,
-  Keyboard,
   UploadCloud,
   Volume2,
   VolumeX,
@@ -30,10 +30,6 @@ import {
   SlidersHorizontal,
   History,
   ShieldAlert,
-  Barcode,
-  Zap,
-  X,
-  CornerDownLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -86,10 +82,9 @@ export default function ScanPage() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scannerRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const manualInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Mode: "camera" | "manual" | "file"
-  const [mode, setMode] = useState<"camera" | "manual" | "file">("camera");
+  // Mode: "camera" | "file"
+  const [mode, setMode] = useState<"camera" | "file">("camera");
 
   // Scanner States
   const [scanning, setScanning] = useState(false);
@@ -103,9 +98,6 @@ export default function ScanPage() {
   const [loading, setLoading] = useState(false);
   const [recentScans, setRecentScans] = useState<RecentScan[]>([]);
   const [copiedSerial, setCopiedSerial] = useState(false);
-
-  // Manual Input State
-  const [manualInput, setManualInput] = useState("");
 
   // Sound Feedback via Web Audio API
   const playBeep = useCallback(() => {
@@ -304,16 +296,6 @@ export default function ScanPage() {
     };
   }, [mode, selectedCameraId, startCamera, stopCamera]);
 
-  // Auto-focus barcode input when switching to manual/wedge mode
-  useEffect(() => {
-    if (mode === "manual") {
-      const timer = setTimeout(() => {
-        manualInputRef.current?.focus();
-      }, 60);
-      return () => clearTimeout(timer);
-    }
-  }, [mode]);
-
   // Handle image file scan
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -356,11 +338,13 @@ export default function ScanPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-olive-700/20">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-wide text-olive-50">Optical & Barcode Scanner</h1>
-            <span className="pill pill-tactical text-[11px] font-mono">OPT-SCN 1.4</span>
+            <h1 className="text-2xl font-bold tracking-wide text-olive-50">Quick Response (QR) Scanner</h1>
+            <span className="pill pill-tactical text-[11px] font-mono flex items-center gap-1">
+              <QrCode className="h-3 w-3" /> QR-ID 1.0
+            </span>
           </div>
           <p className="text-xs text-steel-400 mt-0.5">
-            Real-time QR recognition, USB hardware scanner wedge, and manual armory serial lookup.
+            Browser-integrated optical QR code recognition for firearm identification, issuance, and return verification.
           </p>
         </div>
 
@@ -407,19 +391,6 @@ export default function ScanPage() {
                 </button>
 
                 <button
-                  onClick={() => setMode("manual")}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all",
-                    mode === "manual"
-                      ? "bg-tactical-surface text-olive-100 shadow-sm border border-olive-500/50"
-                      : "text-steel-400 hover:text-steel-200"
-                  )}
-                >
-                  <Keyboard className="h-3.5 w-3.5" />
-                  <span>Hardware / Wedge</span>
-                </button>
-
-                <button
                   onClick={() => setMode("file")}
                   className={cn(
                     "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all",
@@ -429,7 +400,7 @@ export default function ScanPage() {
                   )}
                 >
                   <UploadCloud className="h-3.5 w-3.5" />
-                  <span>Upload QR</span>
+                  <span>Upload QR Image</span>
                 </button>
               </div>
 
@@ -438,19 +409,13 @@ export default function ScanPage() {
                 {mode === "camera" && scanning && (
                   <span className="pill pill-tactical text-[10px] uppercase tracking-wider flex items-center gap-1">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Optical Tracking
-                  </span>
-                )}
-                {mode === "manual" && (
-                  <span className="pill pill-ok text-[10px] uppercase tracking-wider flex items-center gap-1">
-                    <Keyboard className="h-3 w-3" />
-                    Wedge Ready
+                    Optical Tracking Active
                   </span>
                 )}
                 {mode === "file" && (
                   <span className="pill pill-info text-[10px] uppercase tracking-wider flex items-center gap-1">
                     <UploadCloud className="h-3 w-3" />
-                    Image Decoder
+                    Image Decoder Ready
                   </span>
                 )}
               </div>
@@ -493,8 +458,8 @@ export default function ScanPage() {
                         <button onClick={() => startCamera(selectedCameraId)} className="btn-secondary text-xs">
                           <RefreshCw className="h-3 w-3" /> Retry
                         </button>
-                        <button onClick={() => setMode("manual")} className="btn-primary text-xs">
-                          Use Manual / Wedge
+                        <button onClick={() => setMode("file")} className="btn-primary text-xs">
+                          Upload QR Image
                         </button>
                       </div>
                     </div>
@@ -537,164 +502,12 @@ export default function ScanPage() {
               </div>
             )}
 
-            {/* TAB 2: MANUAL / USB BARCODE SCANNER WEDGE */}
-            {mode === "manual" && (
-              <div className="flex-1 flex flex-col justify-between space-y-3.5">
-                <div className="space-y-3.5">
-                  {/* Status Strip */}
-                  <div className="flex items-center justify-between px-3.5 py-2 rounded-lg bg-steel-900/80 border border-olive-700/30 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                      </span>
-                      <span className="font-semibold text-olive-100 uppercase tracking-wider text-[11px]">
-                        Hardware Wedge Active
-                      </span>
-                    </div>
-                    <span className="font-mono text-[10px] text-steel-400 bg-steel-800/80 px-2 py-0.5 rounded border border-olive-700/20">
-                      USB / Bluetooth HID
-                    </span>
-                  </div>
-
-                  {/* Input Console */}
-                  <div className="p-4 rounded-xl bg-steel-900/70 border border-olive-700/40 space-y-3 shadow-inner">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-olive-100 flex items-center gap-1.5">
-                        <Barcode className="h-4 w-4 text-olive-300" />
-                        Barcode Gun / Serial Input
-                      </label>
-                      <span className="text-[10px] text-steel-400 font-mono flex items-center gap-1">
-                        <CornerDownLeft className="h-3 w-3 text-olive-400" /> Press ENTER to Search
-                      </span>
-                    </div>
-
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        performLookup(manualInput);
-                      }}
-                      className="flex gap-2"
-                    >
-                      <div className="relative flex-1">
-                        <input
-                          ref={manualInputRef}
-                          type="text"
-                          autoFocus
-                          value={manualInput}
-                          onChange={(e) => setManualInput(e.target.value)}
-                          placeholder="Scan weapon barcode or type serial (e.g. PA-M4-001)..."
-                          className="input font-mono text-sm w-full pl-9 pr-8 bg-steel-800/90 border-olive-700/50 focus:border-olive-400 focus:ring-1 focus:ring-olive-400/40"
-                        />
-                        <Search className="h-4 w-4 text-steel-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                        {manualInput && (
-                          <button
-                            type="button"
-                            onClick={() => setManualInput("")}
-                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-steel-400 hover:text-steel-200 p-0.5 rounded transition-colors"
-                            title="Clear input"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={loading || !manualInput.trim()}
-                        className="btn-primary text-xs px-4 flex items-center gap-1.5 shrink-0"
-                      >
-                        {loading ? (
-                          <>
-                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                            <span>Searching...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Search className="h-3.5 w-3.5" />
-                            <span>Lookup</span>
-                          </>
-                        )}
-                      </button>
-                    </form>
-                  </div>
-
-                  {/* Quick Test Bench Chips */}
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-steel-400">
-                        Armory Weapon Presets:
-                      </p>
-                      <span className="text-[10px] text-steel-500 font-mono">Click to test instant lookup</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {[
-                        { serial: "PA-M4-001", model: "Colt M4A1" },
-                        { serial: "PA-M4-002", model: "Colt M4A1" },
-                        { serial: "PA-M16-001", model: "Elisco M16A1" },
-                        { serial: "PA-M16-002", model: "Elisco M16A1" },
-                        { serial: "PA-PI-001", model: "Beretta 92FS" },
-                      ].map((item) => (
-                        <button
-                          key={item.serial}
-                          type="button"
-                          onClick={() => {
-                            setManualInput(item.serial);
-                            performLookup(item.serial);
-                          }}
-                          className="group p-2 rounded-lg bg-steel-900/60 hover:bg-tactical-surface border border-olive-700/30 hover:border-olive-500/50 text-left transition-all flex flex-col justify-between"
-                        >
-                          <span className="text-xs font-mono font-semibold text-olive-300 group-hover:text-olive-100 transition-colors">
-                            {item.serial}
-                          </span>
-                          <span className="text-[10px] text-steel-400 group-hover:text-steel-300 transition-colors truncate">
-                            {item.model}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Operation Guide Cards */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
-                    <div className="p-2.5 rounded-lg bg-steel-900/40 border border-olive-700/20 text-xs space-y-1">
-                      <div className="flex items-center gap-1.5 text-olive-200 font-semibold text-[11px]">
-                        <Zap className="h-3.5 w-3.5 text-tactical-accent" />
-                        <span>Rapid Barcode Trigger</span>
-                      </div>
-                      <p className="text-[11px] text-steel-400 leading-relaxed">
-                        Handheld 1D/2D guns automatically submit on newline. Keep this tab active while scanning weapon tags.
-                      </p>
-                    </div>
-
-                    <div className="p-2.5 rounded-lg bg-steel-900/40 border border-olive-700/20 text-xs space-y-1">
-                      <div className="flex items-center gap-1.5 text-olive-200 font-semibold text-[11px]">
-                        <Keyboard className="h-3.5 w-3.5 text-olive-300" />
-                        <span>Manual Fallback</span>
-                      </div>
-                      <p className="text-[11px] text-steel-400 leading-relaxed">
-                        If barcode is scuffed or obscured, type the receiver serial number directly to pull complete armory records.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer Compatibility Banner */}
-                <div className="p-2.5 rounded-lg bg-steel-950/60 border border-olive-700/25 text-xs text-steel-400 flex items-center gap-2.5 mt-auto">
-                  <ShieldCheck className="h-4 w-4 text-olive-400 shrink-0" />
-                  <p className="text-[11px] text-steel-400 leading-tight">
-                    Hardware wedge mode accepts input from all USB and Bluetooth scanners operating in standard HID keyboard wedge mode.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* TAB 3: UPLOAD QR IMAGE FILE */}
+            {/* TAB 2: UPLOAD QR IMAGE FILE */}
             {mode === "file" && (
-              <div className="flex-1 flex flex-col justify-center py-1">
+              <div className="flex-1 flex flex-col justify-between py-1 space-y-3">
                 <div
                   onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-olive-700/50 hover:border-olive-400/80 rounded-xl p-8 text-center cursor-pointer bg-steel-900/40 hover:bg-steel-900/70 transition-all flex-1 flex flex-col items-center justify-center space-y-3 min-h-[340px]"
+                  className="border-2 border-dashed border-olive-700/50 hover:border-olive-400/80 rounded-xl p-8 text-center cursor-pointer bg-steel-900/40 hover:bg-steel-900/70 transition-all flex-1 flex flex-col items-center justify-center space-y-3 min-h-[380px]"
                 >
                   <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
                   <div className="h-14 w-14 rounded-full bg-tactical-surface border border-olive-500/40 flex items-center justify-center text-olive-300 shadow-inner">
@@ -702,11 +515,18 @@ export default function ScanPage() {
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-olive-100">Click to upload or drag & drop QR image</p>
-                    <p className="text-xs text-steel-400 mt-1">Supports PNG, JPG, WEBP photos of firearm tags or labels</p>
+                    <p className="text-xs text-steel-400 mt-1">Supports PNG, JPG, and WEBP photos of firearm QR labels</p>
                   </div>
                   <button type="button" className="btn-secondary text-xs mt-2">
                     Browse Image
                   </button>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-steel-950/60 border border-olive-700/25 text-xs text-steel-400 flex items-center gap-2.5 mt-auto">
+                  <ShieldCheck className="h-4 w-4 text-olive-400 shrink-0" />
+                  <p className="text-[11px] text-steel-400 leading-tight">
+                    Browser-integrated image decoding extracts Quick Response payloads directly from photos for armory verification.
+                  </p>
                 </div>
               </div>
             )}
@@ -724,7 +544,6 @@ export default function ScanPage() {
                 <button
                   onClick={() => {
                     setHit(null);
-                    setManualInput("");
                   }}
                   className="btn-ghost text-xs p-1 text-steel-400 hover:text-olive-100 flex items-center gap-1"
                   title="Clear result"
@@ -857,7 +676,7 @@ export default function ScanPage() {
                   <div>
                     <h3 className="text-sm font-bold text-olive-100">Awaiting Target Acquisition</h3>
                     <p className="text-xs text-steel-400 mt-1 max-w-xs">
-                      Align the QR code sticker within the optical reticle, type the serial number, or trigger your handheld barcode scanner.
+                      Align the firearm&apos;s QR code label within the optical reticle to immediately retrieve the official armory dossier.
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px] text-steel-500 font-mono pt-2">
