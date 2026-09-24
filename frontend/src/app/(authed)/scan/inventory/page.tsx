@@ -117,8 +117,12 @@ export default function InventoryValidationPage() {
           </p>
           <div className="relative aspect-square w-full max-w-sm mx-auto overflow-hidden rounded-md bg-black border border-olive-700/40">
             <div id="inventory-qr-reader" ref={containerRef} className="absolute inset-0" />
-            <div className="pointer-events-none absolute inset-x-8 top-1/4 bottom-1/4 border border-olive-400/70 rounded-md overflow-hidden">
-              <div className="absolute left-0 right-0 h-0.5 bg-olive-300/80 animate-scan-line shadow-[0_0_8px_2px_rgba(174,183,113,0.7)]" />
+            <div className="pointer-events-none absolute inset-x-8 top-1/4 bottom-1/4 border border-yellow-500/40 rounded-lg overflow-hidden shadow-[0_0_0_9999px_rgba(0,0,0,0.4)]">
+              <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-yellow-400 z-20" />
+              <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-yellow-400 z-20" />
+              <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-yellow-400 z-20" />
+              <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-yellow-400 z-20" />
+              <div className="absolute left-0 right-0 h-1 bg-gradient-to-r from-yellow-400 via-white to-yellow-400 animate-laser z-10 shadow-[0_0_16px_3px_rgba(250,204,21,1)]" />
             </div>
           </div>
           <div className="mt-3 flex justify-between items-center">

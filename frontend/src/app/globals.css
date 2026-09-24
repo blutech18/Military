@@ -311,4 +311,23 @@
   border-radius: 0.5rem;
 }
 
+@keyframes laser-sweep {
+  0% {
+    top: 4%;
+    opacity: 0.85;
+  }
+  50% {
+    top: 94%;
+    opacity: 1;
+  }
+  100% {
+    top: 4%;
+    opacity: 0.85;
+  }
+}
+
+.animate-laser {
+  animation: laser-sweep 2s ease-in-out infinite;
+}
+
 

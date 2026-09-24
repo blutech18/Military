@@ -449,10 +449,19 @@ export default function ScanPage() {
 
                   {/* Clean Viewfinder & Scan Line Overlay */}
                   {scanning && !cameraError && (
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-                      <div className="relative w-full h-full max-w-sm max-h-64 border border-olive-500/40 rounded-lg overflow-hidden">
-                        {/* Animated Scanning Laser Beam */}
-                        <div className="absolute left-0 right-0 h-0.5 bg-olive-300 animate-scan-line shadow-[0_0_10px_2px_rgba(174,183,113,0.85)]" />
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 overflow-hidden">
+                      <div className="relative w-full h-full max-w-xs max-h-64 sm:max-h-72 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] border border-yellow-500/40">
+                        {/* Tactical Reticle Corners */}
+                        <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-yellow-400 rounded-tl-lg z-20" />
+                        <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-yellow-400 rounded-tr-lg z-20" />
+                        <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-yellow-400 rounded-bl-lg z-20" />
+                        <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-yellow-400 rounded-br-lg z-20" />
+
+                        {/* Sweeping Laser Beam with Glowing Core & Aura */}
+                        <div className="absolute left-0 right-0 h-1 bg-gradient-to-r from-yellow-400 via-white to-yellow-400 animate-laser z-10 shadow-[0_0_18px_4px_rgba(250,204,21,1)]">
+                          <div className="absolute left-0 right-0 -top-8 h-8 bg-gradient-to-b from-transparent to-yellow-400/25 pointer-events-none" />
+                          <div className="absolute left-0 right-0 top-1 h-8 bg-gradient-to-t from-transparent to-yellow-400/25 pointer-events-none" />
+                        </div>
                       </div>
                     </div>
                   )}
