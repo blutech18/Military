@@ -229,46 +229,38 @@ export default function FirearmDetailPage() {
                     : "bg-blue-950/30 border-blue-500/40 text-blue-100"
                 }`}
               >
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`p-2 rounded-lg shrink-0 ${
-                      activeTx.status === "Overdue" ? "bg-red-900/50 text-red-300" : "bg-blue-900/50 text-blue-300"
-                    }`}
-                  >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
                     {activeTx.status === "Overdue" ? (
-                      <ShieldAlert className="h-5 w-5 animate-pulse" />
+                      <ShieldAlert className="h-4 w-4 text-red-400 animate-pulse shrink-0" />
                     ) : (
-                      <UserCheck className="h-5 w-5" />
+                      <UserCheck className="h-4 w-4 text-blue-400 shrink-0" />
                     )}
+                    <span className="text-xs font-bold uppercase tracking-wider">
+                      {activeTx.status === "Overdue" ? "OVERDUE CUSTODY ALERT" : "CURRENT ARMED CUSTODY"}
+                    </span>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 font-semibold rounded-full uppercase ${
+                        activeTx.status === "Overdue"
+                          ? "bg-red-700 text-white"
+                          : "bg-blue-700 text-blue-50"
+                      }`}
+                    >
+                      {PURPOSES[activeTx.purpose] ?? "Active Mission"}
+                    </span>
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold uppercase tracking-wider">
-                        {activeTx.status === "Overdue" ? "OVERDUE CUSTODY ALERT" : "CURRENT ARMED CUSTODY"}
-                      </span>
-                      <span
-                        className={`text-[10px] px-2 py-0.2 font-semibold rounded-full uppercase ${
-                          activeTx.status === "Overdue"
-                            ? "bg-red-700 text-white"
-                            : "bg-blue-700 text-blue-50"
-                        }`}
-                      >
-                        {PURPOSES[activeTx.purpose] ?? "Active Mission"}
-                      </span>
-                    </div>
-                    <p className="text-sm font-semibold text-white mt-0.5">
-                      {formatPersonnel(activeTx.user, activeTx.user_id)}
-                    </p>
-                    <p className="text-xs text-steel-300 mt-0.5">
-                      Checked out: <span className="text-steel-200">{fmtDate(activeTx.checkout_at)}</span>
-                      {activeTx.expected_return_at && (
-                        <> · Expected: <span className="text-steel-200">{fmtDate(activeTx.expected_return_at)}</span></>
-                      )}
-                    </p>
-                    <p className="text-[11px] text-steel-400 mt-0.5">
-                      Authorized by: <span className="text-steel-300 font-medium">{formatPersonnel(activeTx.authorizer, activeTx.authorized_by)}</span>
-                    </p>
-                  </div>
+                  <p className="text-sm font-semibold text-white">
+                    {formatPersonnel(activeTx.user, activeTx.user_id)}
+                  </p>
+                  <p className="text-xs text-steel-300">
+                    Checked out: <span className="text-steel-200">{fmtDate(activeTx.checkout_at)}</span>
+                    {activeTx.expected_return_at && (
+                      <> · Expected: <span className="text-steel-200">{fmtDate(activeTx.expected_return_at)}</span></>
+                    )}
+                  </p>
+                  <p className="text-[11px] text-steel-400">
+                    Authorized by: <span className="text-steel-300 font-medium">{formatPersonnel(activeTx.authorizer, activeTx.authorized_by)}</span>
+                  </p>
                 </div>
 
                 {canManage && (
@@ -282,18 +274,16 @@ export default function FirearmDetailPage() {
               </div>
             ) : data.availability_status === 1 ? (
               <div className="p-4 rounded-xl border bg-emerald-950/20 border-emerald-600/30 text-emerald-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-emerald-900/40 text-emerald-300 shrink-0">
-                    <ShieldCheck className="h-5 w-5" />
-                  </div>
-                  <div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
                     <span className="text-xs font-bold uppercase tracking-wider text-emerald-300">
                       SECURED IN ARMORY VAULT
                     </span>
-                    <p className="text-xs text-emerald-100/90 mt-0.5">
-                      Stored at <span className="font-semibold text-white">{data.current_location?.location_name ?? "10RCDG Main Armory"}</span>. Inspected and ready for issuance.
-                    </p>
                   </div>
+                  <p className="text-xs text-emerald-100/90">
+                    Stored at <span className="font-semibold text-white">{data.current_location?.location_name ?? "10RCDG Main Armory"}</span>. Inspected and ready for issuance.
+                  </p>
                 </div>
                 {canManage && (
                   <Link
@@ -305,15 +295,15 @@ export default function FirearmDetailPage() {
                 )}
               </div>
             ) : (
-              <div className="p-4 rounded-xl border bg-amber-950/20 border-amber-600/30 text-amber-100 flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-amber-900/40 text-amber-300 shrink-0">
-                  <Wrench className="h-5 w-5" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
-                    ARMORY MAINTENANCE PROTOCOL
-                  </span>
-                  <p className="text-xs text-amber-100/90 mt-0.5">
+              <div className="p-4 rounded-xl border bg-amber-950/20 border-amber-600/30 text-amber-100 flex items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-amber-400 shrink-0" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                      ARMORY MAINTENANCE PROTOCOL
+                    </span>
+                  </div>
+                  <p className="text-xs text-amber-100/90">
                     Designated for routine inspection or armorer servicing at {data.current_location?.location_name ?? "Armory Workshop"}.
                   </p>
                 </div>
