@@ -332,12 +332,13 @@ export default function ScanPage() {
   const isCheckedOut = hit?.availability_status === 2 || hit?.availability_status === 4;
 
   return (
-    <div className="space-y-6">
+    <>
       {/* Hidden container for image decoding */}
-      <div id="file-scan-dummy" className="hidden" />
+      <div id="file-scan-dummy" className="hidden" aria-hidden="true" />
 
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-olive-700/20">
+      <div className="space-y-6">
+        {/* Page Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-olive-700/20">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold tracking-wide text-olive-50">Optical & Barcode Scanner</h1>
@@ -824,5 +825,6 @@ export default function ScanPage() {
         </div>
       )}
     </div>
+  </>
   );
 }
