@@ -6,6 +6,8 @@ use App\Models\FirearmEquipment;
 use App\Models\Role;
 use App\Models\Transaction;
 use App\Services\AuditLogger;
+use BaconQrCode\Common\ErrorCorrectionLevel;
+use BaconQrCode\Encoder\Encoder;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
@@ -153,7 +155,12 @@ class FirearmController extends Controller
     }
 
     /**
-     * Returns an SVG QR code for the firearm. Encodes the JSON QR payload.
+     * Returns an SVG QR code for the firearm.
+     *
+     * It encodes only the short qr_code string (about 30 characters) rather than the JSON payload
+     * (about 125 bytes). A shorter payload gives a QR with far fewer, larger squares, which phone
+     * cameras read reliably from a printed plate at normal distance. lookup() accepts both forms,
+     * so labels printed from the earlier JSON payload keep working.
      */
     public function qrCode(Request $request, int $id): Response
     {
@@ -167,14 +174,13 @@ class FirearmController extends Controller
             ))
             ->findOrFail($id);
 
-        $payload = json_encode($firearm->qrPayload(), JSON_UNESCAPED_SLASHES);
-
         $renderer = new ImageRenderer(
             new RendererStyle(280),
             new SvgImageBackEnd()
         );
         $writer = new Writer($renderer);
-        $svg    = $writer->writeString($payload);
+        // Error-correction level M tolerates glare and small scratches on a printed plate.
+        $svg    = $writer->writeString($firearm->qr_code, Encoder::DEFAULT_BYTE_MODE_ECODING, ErrorCorrectionLevel::M());
 
         return response($svg, 200, [
             'Content-Type'        => 'image/svg+xml',

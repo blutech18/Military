@@ -145,6 +145,33 @@ class FirearmTest extends TestCase
             ->assertJsonFragment(['serial_number' => $firearm->serial_number]);
     }
 
+    public function test_lookup_accepts_the_compact_qr_code_string_the_label_now_encodes(): void
+    {
+        $this->actAsAdmin();
+        $firearm = FirearmEquipment::first();
+
+        // The QR endpoint now encodes just qr_code, so a scan hands exactly that string back.
+        $response = $this->postJson('/api/v1/firearms/lookup', ['qr_payload' => $firearm->qr_code]);
+
+        $response->assertOk()
+            ->assertJsonFragment(['serial_number' => $firearm->serial_number]);
+    }
+
+    public function test_qr_image_encodes_the_short_qr_code_not_the_json_payload(): void
+    {
+        $this->actAsAdmin();
+        $firearm = FirearmEquipment::first();
+
+        $svg = $this->get("/api/v1/firearms/{$firearm->equipment_id}/qr")->assertOk()->getContent();
+
+        // A ~30 character payload fits in a version 2-3 symbol (25-29 modules per side); the old
+        // ~125 byte JSON needed version 7+ (45+ modules). The SVG viewBox is 280 wide with each
+        // module drawn at 280 / (modules + 8 quiet-zone) units, so count modules from the scale.
+        preg_match('/scale\(([\d.]+)\)/', $svg, $m);
+        $modules = (int) round(280 / (float) $m[1]) - 8;
+        $this->assertLessThanOrEqual(33, $modules, "QR has {$modules} modules per side; it should be a compact symbol");
+    }
+
     public function test_raw_serial_lookup(): void
     {
         $this->actAsAdmin();
