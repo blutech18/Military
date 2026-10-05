@@ -1,0 +1,14 @@
+{
+  "port": 8787,
+  "hmac_secret": "PASTE THE SAME VALUE AS BIOMETRIC_BRIDGE_HMAC_SECRET IN backend/.env",
+  "allowed_origins": [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+  ],
+  "enroll_timeout_seconds": 90,
+  "verify_timeout_seconds": 30,
+  "max_failed_verifications": 5,
+  "lockout_seconds": 300,
+  "data_directory": "%LOCALAPPDATA%/ArmoryDB/BiometricBridge",
+  "capture_priority": "low"
+}
