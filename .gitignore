@@ -45,7 +45,6 @@ manuscript
 Master_Prompt_Firearm_Tracking_System.txt
 usermanual/
 emailpass.txt
-setup.bat
 .vercel
 .env*
 credentials.txt
@@ -58,3 +57,7 @@ docs/*
 iot/firmware/**/config.h
 # Generated single-file Wokwi sketch: config.h is inlined, so it holds secrets
 iot/wokwi/
+# Biometric bridge: local secret + build output
+biometric-bridge/bridge.settings.json
+biometric-bridge/bin/
+biometric-bridge/obj/

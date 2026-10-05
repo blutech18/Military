@@ -124,17 +124,19 @@ DAILY USE (After Initial Setup)
 
 Every time you want to use the system:
 
+OPTION A (Easiest - 1 Click):
+Double-click "start.bat" in the project folder.
+It will automatically check MySQL, start both servers in
+separate windows, and open http://localhost:3000 in your browser!
+
+OPTION B (Manual):
 1. Open XAMPP Control Panel and start MySQL
-   (or just run setup.bat — it starts MySQL for you)
-
 2. Open Terminal 1:
-   cd C:\Projects\Military\backend
+   cd backend
    php artisan serve
-
 3. Open Terminal 2:
-   cd C:\Projects\Military\frontend
+   cd frontend
    npm run dev
-
 4. Open browser: http://localhost:3000
 
 
