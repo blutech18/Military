@@ -8,6 +8,7 @@ use App\Models\Role;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\BiometricStepUp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -58,6 +59,11 @@ class TransactionController extends Controller
             'notes'             => ['nullable', 'string', 'max:500'],
             'gps_tracking_enabled' => ['sometimes', 'boolean'],
         ]);
+
+        // Fresh fingerprint scan, bound to this firearm, when biometrics are required.
+        if ($denied = BiometricStepUp::consume($request, 'issue', 'equipment:' . $data['equipment_id'])) {
+            return $denied;
+        }
 
         $authorizer = $request->user();
 
@@ -110,6 +116,11 @@ class TransactionController extends Controller
             'condition_on_return' => ['required', 'integer', 'between:1,4'],
             'notes'               => ['nullable', 'string', 'max:500'],
         ]);
+
+        // Fresh fingerprint scan, bound to this transaction, when biometrics are required.
+        if ($denied = BiometricStepUp::consume($request, 'return', 'transaction:' . $id)) {
+            return $denied;
+        }
 
         return DB::transaction(function () use ($id, $data, $request) {
             $tx = Transaction::with('firearm')->lockForUpdate()->findOrFail($id);

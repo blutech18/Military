@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/store/auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { BiometricConfirmHost } from "@/components/biometric/biometric-confirm-host";
 
 // Route-to-role matrix — must stay in sync with sidebar ALL_ITEMS.
 // "*" means any authenticated user. Unlisted routes default to "*".
@@ -65,6 +66,7 @@ export default function AuthedLayout({ children }: { children: React.ReactNode }
           {children}
         </main>
       </div>
+      <BiometricConfirmHost />
     </div>
   );
 }

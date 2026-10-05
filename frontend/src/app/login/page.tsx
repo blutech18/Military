@@ -7,14 +7,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Lock,
   User,
-  AlertTriangle,
   Loader2,
   Eye,
   EyeOff,
   KeyRound,
   ArrowLeft,
   Mail,
-  CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -29,6 +27,7 @@ interface LoginResponse {
   totp_enabled?: boolean;
   biometric_enrolled?: boolean;
   username?: string;
+  challenge_expires_in?: number;
   // Present when both MFA methods are disabled (direct login)
   token?: string;
   token_type?: string;
@@ -258,6 +257,8 @@ export default function LoginPage() {
 
       // MFA required — store challenge and route to the correct step
       sessionStorage.setItem("armory_challenge", data.challenge_token!);
+      // Sign-in sessions are short-lived; remember when this one ends so later steps can warn the user.
+      sessionStorage.setItem("armory_challenge_expires_at", String(Date.now() + (data.challenge_expires_in ?? 300) * 1000));
       sessionStorage.setItem("armory_username", data.username ?? (data.user?.username || username));
       sessionStorage.setItem("armory_next_step", data.next ?? "totp_setup");
       sessionStorage.setItem("armory_totp_enabled", data.totp_enabled ? "1" : "0");
@@ -524,11 +525,8 @@ export default function LoginPage() {
                 </div>
 
                 {showRecaptcha && (
-                  <div className="mt-3 mb-2 rounded-md border border-amber-700/40 bg-amber-900/20 p-3 text-xs text-amber-200 flex gap-2">
-                    <AlertTriangle className="h-4 w-4 shrink-0" />
-                    <div>
-                      Multiple failed attempts detected. Google reCAPTCHA v3 will verify this retry when you submit.
-                    </div>
+                  <div className="mt-3 mb-2 rounded-md border border-amber-700/40 bg-amber-900/20 p-3 text-xs text-amber-200 text-center leading-relaxed">
+                    Multiple failed attempts detected. Google reCAPTCHA v3 will verify this retry when you submit.
                   </div>
                 )}
 

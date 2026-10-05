@@ -79,6 +79,8 @@ export default function TotpPage() {
 
       toast.success("TOTP verified.");
       setNavigating(true);
+      // "biometric_enroll" (first fingerprint) or "biometric" (verify an enrolled one).
+      if (data.next) sessionStorage.setItem("armory_next_step", data.next);
       router.push("/login/biometric");
     } catch (e: any) {
       toast.error(e.response?.data?.message ?? "Invalid code.");

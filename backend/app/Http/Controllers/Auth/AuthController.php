@@ -7,8 +7,8 @@ use App\Models\Notification;
 use App\Models\SystemSetting;
 use App\Models\User;
 use App\Services\AuditLogger;
+use App\Services\BiometricProof;
 use App\Services\EmailDeliveryService;
-use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -149,6 +149,8 @@ class AuthController extends Controller
         return response()->json([
             'message'             => 'Password verified — proceed to MFA.',
             'challenge_token'     => $challenge,
+            // Seconds the unfinished sign-in stays valid; the UI shows a countdown from this.
+            'challenge_expires_in' => max(0, $expiresAt->timestamp - now()->timestamp),
             'next'                => $next,
             'username'            => $user->username,
             'totp_enabled'        => (bool) $user->totp_enabled,
@@ -447,15 +449,19 @@ class AuthController extends Controller
 
     /**
      * STEP 3 — Biometric (fingerprint) verify.
-     * Frontend sends a base64 fingerprint template captured by the Futronic SDK.
-     * For demo purposes a SHA-256 of the template must match the stored encrypted hash.
+     *
+     * Live readers go through the local biometric bridge (biometric-bridge/). The bridge
+     * performs the 1:1 fingerprint match with the reader SDK and only then releases the
+     * user's enrollment token as "fingerprint", signed with BIOMETRIC_BRIDGE_HMAC_SECRET.
+     * Raw captures differ on every touch, so the backend compares the token's SHA-256
+     * against the stored hash rather than comparing fingerprint data directly.
      */
     public function biometricVerify(Request $request): JsonResponse
     {
         $data = $request->validate([
             'challenge_token'  => ['required', 'string'],
             'fingerprint'      => ['required', 'string', 'min:32'],
-            'source'           => ['required', 'string', 'in:futronic_bridge,demo_placeholder'],
+            'source'           => ['required', 'string', 'in:digitalpersona_bridge,futronic_bridge,demo_placeholder'],
             'capture_signature'=> ['nullable', 'string', 'size:64'],
             'captured_at'      => ['nullable', 'date'],
         ]);
@@ -470,41 +476,13 @@ class AuthController extends Controller
         if (! ($state['totp_ok'] ?? false)) {
             return response()->json(['message' => 'Complete TOTP verification first.'], 403);
         }
-        if ($data['source'] === 'demo_placeholder' && ! $this->demoModeAllowed()) {
-            return response()->json(['message' => 'Biometric demo mode is disabled.'], 403);
-        }
-
         $user = User::findOrFail($state['user_id']);
-        $hash = hash('sha256', $data['fingerprint']);
 
-        if ($data['source'] === 'futronic_bridge') {
-            $bridgeSecret = (string) config('armory.biometric.bridge_hmac_secret');
-            if ($bridgeSecret === '') {
-                return response()->json(['message' => 'Biometric bridge attestation is not configured.'], 503);
-            }
-            if (empty($data['capture_signature']) || empty($data['captured_at'])) {
-                return response()->json(['message' => 'Biometric bridge attestation is required.'], 422);
-            }
-
-            $capturedAt = CarbonImmutable::parse($data['captured_at']);
-            $maxAgeSeconds = max(1, (int) config('armory.biometric.attestation_max_age_seconds', 60));
-            if ($capturedAt->lt(CarbonImmutable::now()->subSeconds($maxAgeSeconds))
-                || $capturedAt->gt(CarbonImmutable::now()->addSeconds(5))) {
-                return response()->json(['message' => 'Biometric bridge attestation is expired or invalid.'], 422);
-            }
-
-            $attestationPayload = implode('|', [
-                $data['challenge_token'],
-                $user->username,
-                $data['captured_at'],
-                $hash,
-            ]);
-            $expectedSignature = hash_hmac('sha256', $attestationPayload, $bridgeSecret);
-            if (! hash_equals($expectedSignature, strtolower($data['capture_signature']))) {
-                AuditLogger::log('failed_login', 'Invalid biometric bridge attestation', $user, request: $request);
-                return response()->json(['message' => 'Biometric bridge attestation is invalid.'], 401);
-            }
+        if ($error = BiometricProof::check($data, $user, $data['challenge_token'], $request)) {
+            return $error;
         }
+
+        $hash = BiometricProof::hash($data['fingerprint']);
 
         if ($user->biometric_enrolled && $user->biometric_data) {
             if (! hash_equals($user->biometric_data, $hash)) {
@@ -516,6 +494,14 @@ class AuthController extends Controller
                 'biometric_data'     => $hash,
                 'biometric_enrolled' => true,
             ]);
+
+            AuditLogger::log(
+                'biometric_enroll',
+                "Fingerprint enrolled for {$user->username}",
+                $user,
+                request: $request,
+                metadata: ['source' => $data['source']],
+            );
         }
 
         $state['biometric_ok'] = true;
@@ -822,6 +808,6 @@ class AuthController extends Controller
 
     protected function demoModeAllowed(): bool
     {
-        return app()->environment(['local', 'testing']) && (bool) config('armory.demo_mode');
+        return BiometricProof::demoModeAllowed();
     }
 }

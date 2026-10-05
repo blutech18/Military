@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuditLogController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\BiometricStepUpController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FirearmController;
 use App\Http\Controllers\GpsController;
@@ -91,6 +92,9 @@ Route::middleware('rate.strict')->prefix('v1')->group(function () {
             Route::post('firearms',                  [FirearmController::class, 'store']);
             Route::patch('firearms/{id}',            [FirearmController::class, 'update']);
             Route::delete('firearms/{id}',           [FirearmController::class, 'destroy']);
+            // Fingerprint re-scan required before issuing/returning (when biometrics are enabled)
+            Route::post('auth/biometric/step-up/challenge', [BiometricStepUpController::class, 'challenge']);
+            Route::post('auth/biometric/step-up/verify',    [BiometricStepUpController::class, 'verify']);
             Route::post('transactions/issue',        [TransactionController::class, 'issue']);
             Route::patch('transactions/{id}/return', [TransactionController::class, 'returnFirearm']);
             Route::post('transactions/sweep-overdue',[TransactionController::class, 'sweepOverdue']);

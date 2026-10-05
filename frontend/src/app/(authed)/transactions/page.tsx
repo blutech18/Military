@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuthStore, hasRole } from "@/store/auth";
 import { ActionModal } from "@/components/ui/action-modal";
+import { confirmBiometric, isBiometricCancelled } from "@/store/biometric-confirm";
 import {
   LaravelPage,
   TransactionLedger,
@@ -121,11 +122,15 @@ function TransactionsContent() {
   const hasFilters = status !== "" || equipmentId != null || userId != null;
 
   const returnMutation = useMutation({
-    mutationFn: ({ id, condition }: { id: number; condition: number }) =>
-      api.patch(`/transactions/${id}/return`, {
+    mutationFn: async ({ id, condition }: { id: number; condition: number }) => {
+      // Fresh fingerprint scan for this exact transaction (a no-op when biometrics are off).
+      const grant = await confirmBiometric("return", `transaction:${id}`);
+      return api.patch(`/transactions/${id}/return`, {
         condition_on_return: condition,
         notes: "Returned via UI",
-      }),
+        ...(grant ? { biometric_grant: grant } : {}),
+      });
+    },
     onSuccess: () => {
       toast.success("Firearm returned and GPS tracking deactivated.");
       setReturnTarget(null);
@@ -133,7 +138,10 @@ function TransactionsContent() {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["dashboard-summary"] });
     },
-    onError: (error: unknown) => toast.error(apiErrorMessage(error, "Return failed.")),
+    onError: (error: unknown) => {
+      if (isBiometricCancelled(error)) return;
+      toast.error(apiErrorMessage(error, "Return failed."));
+    },
   });
 
   const sweepMutation = useMutation({
@@ -406,14 +414,18 @@ function IssuanceModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
     event.preventDefault();
     setLoading(true);
     try {
+      // Fresh fingerprint scan for this exact firearm (a no-op when biometrics are off).
+      const grant = await confirmBiometric("issue", `equipment:${Number(form.equipment_id)}`);
       await api.post("/transactions/issue", {
         ...form,
         equipment_id: Number(form.equipment_id),
         user_id: Number(form.user_id),
+        ...(grant ? { biometric_grant: grant } : {}),
       });
       toast.success("Firearm issued — GPS tracking activated.");
       onSuccess();
     } catch (error: unknown) {
+      if (isBiometricCancelled(error)) return;
       toast.error(apiErrorMessage(error, "Issuance failed."));
     } finally {
       setLoading(false);

@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import { ArrowLeft, ShieldCheck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { confirmBiometric, isBiometricCancelled } from "@/store/biometric-confirm";
 
 function NewIssuanceContent() {
   const router = useRouter();
@@ -42,14 +43,18 @@ function NewIssuanceContent() {
     e.preventDefault();
     setLoading(true);
     try {
+      // Fresh fingerprint scan for this exact firearm (a no-op when biometrics are off).
+      const grant = await confirmBiometric("issue", `equipment:${Number(form.equipment_id)}`);
       await api.post("/transactions/issue", {
         ...form,
         equipment_id: Number(form.equipment_id),
         user_id: Number(form.user_id),
+        ...(grant ? { biometric_grant: grant } : {}),
       });
       toast.success("Firearm issued — GPS tracking activated.");
       router.replace("/transactions");
     } catch (e: any) {
+      if (isBiometricCancelled(e)) return;
       toast.error(e.response?.data?.message ?? "Issuance failed.");
     } finally {
       setLoading(false);
