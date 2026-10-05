@@ -172,9 +172,9 @@ export default function InventoryValidationPage() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-olive-700/20">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-wide text-olive-50">Batch Inventory QR Validation</h1>
-            <span className="pill pill-tactical text-[11px] font-mono flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-wide text-olive-50">Batch Inventory QR Validation</h1>
+            <span className="pill pill-tactical text-[11px] font-mono flex items-center gap-1 whitespace-nowrap shrink-0">
               <ClipboardCheck className="h-3 w-3" /> BATCH-VAL 1.0
             </span>
           </div>
@@ -183,13 +183,13 @@ export default function InventoryValidationPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
           {/* Sound Toggle */}
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
             title={soundEnabled ? "Audio alert: Enabled" : "Audio alert: Muted"}
             className={cn(
-              "btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5 transition-colors",
+              "btn-secondary text-xs px-3 py-2 sm:py-1.5 flex items-center justify-center gap-1.5 transition-colors",
               soundEnabled ? "text-olive-300 border-olive-500/40" : "text-steel-500"
             )}
           >
@@ -198,7 +198,7 @@ export default function InventoryValidationPage() {
           </button>
 
           {/* Single Scan Navigation */}
-          <Link href="/scan" className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5">
+          <Link href="/scan" className="btn-secondary text-xs px-3 py-2 sm:py-1.5 flex items-center justify-center gap-1.5">
             <QrCode className="h-3.5 w-3.5 text-tactical-accent" />
             <span>Single QR Scan</span>
           </Link>
@@ -220,9 +220,9 @@ export default function InventoryValidationPage() {
 
               <div className="flex items-center gap-2">
                 {scanning && (
-                  <span className="pill pill-tactical text-[10px] uppercase tracking-wider flex items-center gap-1">
+                  <span className="pill pill-tactical text-[10px] uppercase tracking-wider flex items-center gap-1 whitespace-nowrap">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Optical Tracking Active
+                    <span><span className="hidden sm:inline">Optical </span>Tracking Active</span>
                   </span>
                 )}
               </div>
@@ -230,7 +230,7 @@ export default function InventoryValidationPage() {
 
             {/* LIVE CAMERA VIEWPORT */}
             <div className="flex-1 flex flex-col justify-between space-y-3">
-              <div className="relative aspect-video sm:aspect-[4/3] w-full max-h-[420px] mx-auto overflow-hidden rounded-lg bg-black border border-olive-700/50 shadow-inner flex items-center justify-center">
+              <div className="relative aspect-[4/3] w-full max-h-[420px] mx-auto overflow-hidden rounded-lg bg-black border border-olive-700/50 shadow-inner flex items-center justify-center">
                 {/* HTML5 QR Code Mount Target */}
                 <div id="inventory-qr-viewport" ref={containerRef} className="absolute inset-0 w-full h-full" />
 

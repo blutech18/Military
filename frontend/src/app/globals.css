@@ -295,6 +295,7 @@
 #qr-shaded-region,
 #qr-shaded-region > div,
 #qr-camera-viewport #qr-shaded-region,
+#inventory-qr-viewport #qr-shaded-region,
 #inventory-qr-reader #qr-shaded-region,
 #qr-reader #qr-shaded-region {
   display: none !important;
@@ -304,6 +305,7 @@
 }
 
 #qr-camera-viewport video,
+#inventory-qr-viewport video,
 #inventory-qr-reader video {
   width: 100% !important;
   height: 100% !important;

@@ -94,15 +94,33 @@ export function useQrCamera({ viewportId, active = true, onDecode, dedupeMs = 30
       }
       if (!document.getElementById(viewportId)) return;
 
-      const { Html5Qrcode } = await import("html5-qrcode");
+      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
       if (cancelled) return;
 
-      const scanner = new Html5Qrcode(viewportId);
+      // QR only: skipping the other barcode formats makes every frame decode faster. On browsers
+      // with a native BarcodeDetector (Chrome on Android) that is used instead, which copes much
+      // better with small, dense or slightly blurry codes than the JavaScript decoder.
+      const scanner = new Html5Qrcode(viewportId, {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        verbose: false,
+      });
       scannerRef.current = scanner;
       try {
         await scanner.start(
+          // Required by the library even though videoConstraints below take precedence.
           cameraId ? cameraId : { facingMode: "environment" },
-          { fps: 15 },
+          {
+            fps: 10,
+            // The default stream is low resolution, which turns a dense QR into mush. Ask for HD
+            // and continuous autofocus; browsers that cannot honour either simply ignore them.
+            videoConstraints: {
+              ...(cameraId ? { deviceId: { exact: cameraId } } : { facingMode: { ideal: "environment" } }),
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+              advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
+            },
+          },
           async (decodedText: string) => {
             const now = Date.now();
             if (decodedText === lastScanRef.current.text && now - lastScanRef.current.time < dedupeMs) return;

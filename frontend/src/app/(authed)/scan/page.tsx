@@ -208,24 +208,24 @@ export default function ScanPage() {
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-olive-700/20">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-wide text-olive-50">Quick Response (QR) Scanner</h1>
-            <span className="pill pill-tactical text-[11px] font-mono flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-wide text-olive-50">Quick Response (QR) Scanner</h1>
+            <span className="pill pill-tactical text-[11px] font-mono flex items-center gap-1 whitespace-nowrap shrink-0">
               <QrCode className="h-3 w-3" /> QR-ID 1.0
             </span>
           </div>
-          <p className="text-xs text-steel-400 mt-0.5">
+          <p className="text-xs text-steel-400 mt-1 max-w-prose">
             Browser-integrated optical QR code recognition for firearm identification, issuance, and return verification.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
           {/* Sound Toggle */}
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
             title={soundEnabled ? "Audio alert: Enabled" : "Audio alert: Muted"}
             className={cn(
-              "btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5 transition-colors",
+              "btn-secondary text-xs px-3 py-2 sm:py-1.5 flex items-center justify-center gap-1.5 transition-colors",
               soundEnabled ? "text-olive-300 border-olive-500/40" : "text-steel-500"
             )}
           >
@@ -234,7 +234,7 @@ export default function ScanPage() {
           </button>
 
           {/* Batch Scan Navigation */}
-          <Link href="/scan/inventory" className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5">
+          <Link href="/scan/inventory" className="btn-secondary text-xs px-3 py-2 sm:py-1.5 flex items-center justify-center gap-1.5">
             <ClipboardCheck className="h-3.5 w-3.5 text-tactical-accent" />
             <span>Batch Inventory</span>
           </Link>
@@ -246,12 +246,12 @@ export default function ScanPage() {
         <div className="lg:col-span-7 flex flex-col">
           <div className="glass rounded-xl p-4 sm:p-5 flex-1 flex flex-col justify-between lg:min-h-[540px]">
             {/* Mode Switcher Tabs */}
-            <div className="flex items-center justify-between border-b border-olive-700/30 pb-3 mb-4">
-              <div className="flex items-center gap-1.5 bg-steel-900/90 p-1 rounded-lg border border-olive-700/30">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-olive-700/30 pb-3 mb-4">
+              <div className="grid grid-cols-2 gap-1.5 sm:flex sm:items-center bg-steel-900/90 p-1 rounded-lg border border-olive-700/30">
                 <button
                   onClick={() => setMode("camera")}
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all",
+                    "flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all",
                     mode === "camera"
                       ? "bg-tactical-surface text-olive-100 shadow-sm border border-olive-500/50"
                       : "text-steel-400 hover:text-steel-200"
@@ -264,7 +264,7 @@ export default function ScanPage() {
                 <button
                   onClick={() => setMode("file")}
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all",
+                    "flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-all",
                     mode === "file"
                       ? "bg-tactical-surface text-olive-100 shadow-sm border border-olive-500/50"
                       : "text-steel-400 hover:text-steel-200"
@@ -276,15 +276,15 @@ export default function ScanPage() {
               </div>
 
               {/* Status Indicator */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-h-[26px]">
                 {mode === "camera" && scanning && (
-                  <span className="pill pill-tactical text-[10px] uppercase tracking-wider flex items-center gap-1">
+                  <span className="pill pill-tactical text-[10px] uppercase tracking-wider flex items-center gap-1 whitespace-nowrap">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Optical Tracking Active
+                    <span><span className="hidden sm:inline">Optical </span>Tracking Active</span>
                   </span>
                 )}
                 {mode === "file" && (
-                  <span className="pill pill-info text-[10px] uppercase tracking-wider flex items-center gap-1">
+                  <span className="pill pill-info text-[10px] uppercase tracking-wider flex items-center gap-1 whitespace-nowrap">
                     <UploadCloud className="h-3 w-3" />
                     Image Decoder Ready
                   </span>
@@ -295,7 +295,7 @@ export default function ScanPage() {
             {/* TAB 1: LIVE CAMERA VIEWPORT */}
             {/* Stays mounted (hidden) on the upload tab so a camera start in flight is never torn out of the DOM. */}
             <div className={cn("flex-1 flex-col justify-between space-y-3", mode === "camera" ? "flex" : "hidden")}>
-              <div className="relative aspect-video sm:aspect-[4/3] w-full max-h-[420px] mx-auto overflow-hidden rounded-lg bg-black border border-olive-700/50 shadow-inner flex items-center justify-center">
+              <div className="relative aspect-[4/3] w-full max-h-[420px] mx-auto overflow-hidden rounded-lg bg-black border border-olive-700/50 shadow-inner flex items-center justify-center">
                 {/* HTML5 QR Code Mount Target */}
                 <div id="qr-camera-viewport" ref={containerRef} className="absolute inset-0 w-full h-full" />
 
@@ -340,12 +340,12 @@ export default function ScanPage() {
               {/* Camera Hardware Controls */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs mt-auto">
                 {availableCameras.length > 1 && (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1 sm:flex-none">
                     <SlidersHorizontal className="h-3.5 w-3.5 text-steel-400" />
                     <select
                       value={selectedCameraId}
                       onChange={(e) => selectCamera(e.target.value)}
-                      className="bg-steel-800 border border-olive-700/40 rounded px-2 py-1 text-xs text-olive-100"
+                      className="bg-steel-800 border border-olive-700/40 rounded px-2 py-1.5 sm:py-1 text-xs text-olive-100 min-w-0 flex-1 sm:flex-none truncate"
                     >
                       {availableCameras.map((cam) => (
                         <option key={cam.id} value={cam.id}>
@@ -561,18 +561,48 @@ export default function ScanPage() {
       {/* RECENT SCANS HISTORY TABLE */}
       {recentScans.length > 0 && (
         <div className="glass rounded-xl p-4 sm:p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <History className="h-4 w-4 text-olive-300" />
               <h3 className="text-sm font-bold text-olive-100">Recent Scans (Current Session)</h3>
               <span className="pill pill-tactical text-[10px]">{recentScans.length} logged</span>
             </div>
-            <button onClick={() => setRecentScans([])} className="btn-ghost text-xs py-1 px-2 text-steel-400 hover:text-red-400">
+            <button onClick={() => setRecentScans([])} className="btn-ghost text-xs py-1 px-2 ml-auto text-steel-400 hover:text-red-400">
               Clear History
             </button>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Phone layout: one card per scan instead of a five-column table */}
+          <ul className="sm:hidden space-y-2">
+            {recentScans.map((scan) => (
+              <li
+                key={`${scan.equipment_id}-${scan.timestamp}-card`}
+                className="rounded-lg border border-olive-700/30 bg-steel-900/50 p-3 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <p className="font-mono text-xs font-semibold text-olive-100 truncate">{scan.serial_number}</p>
+                  <p className="text-xs text-steel-300 truncate">{scan.model}</p>
+                  <p className="text-[10px] font-mono text-steel-500 mt-0.5">{scan.timestamp}</p>
+                </div>
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <span className={`pill ${STATUSES[scan.availability_status]?.tone}`}>
+                    {STATUSES[scan.availability_status]?.label}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setHit(scan.data);
+                      toast.info(`Loaded ${scan.serial_number}`);
+                    }}
+                    className="btn-ghost text-xs py-1 px-2 text-olive-300 hover:text-olive-100"
+                  >
+                    Inspect
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden sm:block overflow-x-auto">
             <table className="table-auto w-full text-xs">
               <thead>
                 <tr className="border-b border-olive-700/30 text-[10px] uppercase tracking-wider text-olive-300 text-left">
