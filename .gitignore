@@ -61,3 +61,5 @@ iot/wokwi/
 biometric-bridge/bridge.settings.json
 biometric-bridge/bin/
 biometric-bridge/obj/
+# QR decoder binary, copied from node_modules by frontend/scripts/copy-zxing-wasm.mjs
+frontend/public/zxing_reader.wasm

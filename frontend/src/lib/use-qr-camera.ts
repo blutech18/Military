@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { decodeQrFromImageData, preloadQrDecoder } from "@/lib/qr-decoder";
 
 export interface QrCameraOption {
   id: string;
@@ -8,7 +9,7 @@ export interface QrCameraOption {
 }
 
 interface UseQrCameraOptions {
-  /** DOM id of the element html5-qrcode renders the video into. */
+  /** DOM id of the element the camera preview is rendered into. */
   viewportId: string;
   /** The camera runs only while this is true (e.g. the Live Camera tab is open). */
   active?: boolean;
@@ -16,6 +17,12 @@ interface UseQrCameraOptions {
   /** Ignore the same decoded text if it repeats within this window. */
   dedupeMs?: number;
 }
+
+/** Longest side, in pixels, of the frame handed to the decoder. */
+const DECODE_LONG_SIDE = 1280;
+/** Every few attempts the decoder gets a larger frame, which helps with small or distant codes. */
+const DECODE_LONG_SIDE_LARGE = 1920;
+const DECODE_INTERVAL_MS = 100;
 
 function describeCameraError(err: unknown): string {
   const text = `${(err as any)?.name ?? ""} ${(err as any)?.message ?? String(err)}`;
@@ -34,34 +41,31 @@ function describeCameraError(err: unknown): string {
 const INSECURE_CONTEXT_MESSAGE =
   "Browsers only allow camera access on HTTPS or http://localhost. Open this app at http://localhost:3000 on this computer, or serve it over HTTPS.";
 
+interface RunningCamera {
+  stop: () => void;
+}
+
 /**
- * Drives an html5-qrcode live camera.
+ * Drives a live QR camera: owns the video stream and the decode loop.
  *
- * Starting and stopping are queued on one promise chain, so a stop always waits for a start that is
- * still in flight and then releases it. Without that, a camera that finished starting after its
- * cleanup had already run was never stopped: the webcam stayed on and blocked the next start.
+ * Frames are decoded at their true aspect ratio and resolution. The previous implementation used
+ * html5-qrcode, which squeezes the whole video frame into the on-screen preview box before
+ * decoding. A phone held upright delivers a portrait frame (about 1080x1920) and the preview is a
+ * landscape box, so the QR arrived tiny and stretched, and scanning failed even when the code was
+ * large and sharp in the preview.
+ *
+ * Starting and stopping are queued on one promise chain, so a stop always waits for a start that
+ * is still in flight and then releases it; a camera that finishes starting after its cleanup has
+ * run is stopped immediately instead of being left on.
  */
 export function useQrCamera({ viewportId, active = true, onDecode, dedupeMs = 3000 }: UseQrCameraOptions) {
-  const scannerRef = useRef<any>(null);
+  const runningRef = useRef<RunningCamera | null>(null);
   const chainRef = useRef<Promise<void>>(Promise.resolve());
   const lastScanRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
   const onDecodeRef = useRef(onDecode);
   useEffect(() => {
     onDecodeRef.current = onDecode;
   }, [onDecode]);
-
-  // html5-qrcode calls video.play() without handling its rejection. Stopping a camera that is still
-  // starting makes that promise reject with this AbortError; it is expected and harmless.
-  useEffect(() => {
-    const ignoreInterruptedPlay = (event: PromiseRejectionEvent) => {
-      const reason = event.reason as { name?: string; message?: string } | undefined;
-      if (reason?.name === "AbortError" && /play\(\) request was interrupted/i.test(reason.message ?? "")) {
-        event.preventDefault();
-      }
-    };
-    window.addEventListener("unhandledrejection", ignoreInterruptedPlay);
-    return () => window.removeEventListener("unhandledrejection", ignoreInterruptedPlay);
-  }, []);
 
   const [paused, setPaused] = useState(false);
   const [cameraId, setCameraId] = useState(""); // "" = browser default (rear camera on phones)
@@ -83,6 +87,7 @@ export function useQrCamera({ viewportId, active = true, onDecode, dedupeMs = 30
     };
 
     setCameraError(null);
+    preloadQrDecoder();
 
     enqueue(async () => {
       if (cancelled) return;
@@ -92,82 +97,132 @@ export function useQrCamera({ viewportId, active = true, onDecode, dedupeMs = 30
         setCameraError(INSECURE_CONTEXT_MESSAGE);
         return;
       }
-      if (!document.getElementById(viewportId)) return;
+      const viewport = document.getElementById(viewportId);
+      if (!viewport) return;
 
-      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
-      if (cancelled) return;
-
-      // QR only: skipping the other barcode formats makes every frame decode faster. On browsers
-      // with a native BarcodeDetector (Chrome on Android) that is used instead, which copes much
-      // better with small, dense or slightly blurry codes than the JavaScript decoder.
-      const scanner = new Html5Qrcode(viewportId, {
-        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
-        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
-        verbose: false,
-      });
-      scannerRef.current = scanner;
+      let stream: MediaStream;
       try {
-        await scanner.start(
-          // Required by the library even though videoConstraints below take precedence.
-          cameraId ? cameraId : { facingMode: "environment" },
-          {
-            fps: 10,
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            ...(cameraId ? { deviceId: { exact: cameraId } } : { facingMode: { ideal: "environment" } }),
             // The default stream is low resolution, which turns a dense QR into mush. Ask for HD
             // and continuous autofocus; browsers that cannot honour either simply ignore them.
-            videoConstraints: {
-              ...(cameraId ? { deviceId: { exact: cameraId } } : { facingMode: { ideal: "environment" } }),
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-              advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
-            },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
           },
-          async (decodedText: string) => {
-            const now = Date.now();
-            if (decodedText === lastScanRef.current.text && now - lastScanRef.current.time < dedupeMs) return;
-            lastScanRef.current = { text: decodedText, time: now };
-            await onDecodeRef.current(decodedText);
-          },
-          () => {
-            // No QR code in this frame.
-          }
-        );
-        if (cancelled) return; // the cleanup's queued teardown stops it right after this task
-
-        setScanning(true);
-        try {
-          setActiveCameraId(scanner.getRunningTrackSettings()?.deviceId ?? "");
-          // Labels are only populated once permission is granted, so list cameras after the start.
-          const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
-          if (!cancelled) {
-            setCameras(devices.map((d, i) => ({ id: d.deviceId, label: d.label || `Camera ${i + 1}` })));
-          }
-        } catch {
-          // The camera list is optional; scanning already works.
-        }
+        });
       } catch (err) {
-        if (cancelled) return; // a deliberate stop interrupts the start; that is not a failure
+        if (cancelled) return;
         console.error("Camera error:", err);
         setScanning(false);
         setCameraError(describeCameraError(err));
+        return;
+      }
+
+      // Stopped while the permission prompt or camera start was pending: release it right away.
+      if (cancelled) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.setAttribute("playsinline", "");
+      video.setAttribute("muted", "");
+      video.autoplay = true;
+      video.srcObject = stream;
+      viewport.replaceChildren(video); // sized by the #...-viewport video rules in globals.css
+
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      let stopped = false;
+      let busy = false;
+      let tick = 0;
+
+      const decodeFrame = async () => {
+        if (stopped || busy || !context || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+        busy = true;
+        try {
+          // Alternate normal and large frames; both keep the true aspect ratio.
+          const longSide = tick++ % 4 === 3 ? DECODE_LONG_SIDE_LARGE : DECODE_LONG_SIDE;
+          const scale = Math.min(1, longSide / Math.max(video.videoWidth, video.videoHeight));
+          const width = Math.max(1, Math.round(video.videoWidth * scale));
+          const height = Math.max(1, Math.round(video.videoHeight * scale));
+          if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+          }
+          context.drawImage(video, 0, 0, width, height);
+          const text = await decodeQrFromImageData(context.getImageData(0, 0, width, height));
+          if (text && !stopped) {
+            const now = Date.now();
+            if (text === lastScanRef.current.text && now - lastScanRef.current.time < dedupeMs) return;
+            lastScanRef.current = { text, time: now };
+            await onDecodeRef.current(text);
+          }
+        } catch (err) {
+          console.warn("QR decode attempt failed:", err);
+        } finally {
+          busy = false;
+        }
+      };
+
+      const loop = () => {
+        if (stopped) return;
+        void decodeFrame().finally(() => {
+          if (!stopped) timer = setTimeout(loop, DECODE_INTERVAL_MS);
+        });
+      };
+
+      const running: RunningCamera = {
+        stop: () => {
+          stopped = true;
+          if (timer) clearTimeout(timer);
+          stream.getTracks().forEach((track) => track.stop());
+          video.pause();
+          video.srcObject = null;
+          video.remove();
+        },
+      };
+      runningRef.current = running;
+
+      try {
+        await video.play();
+      } catch (err) {
+        if (cancelled) return; // the teardown queued by the cleanup releases the stream
+        console.error("Camera error:", err);
+        running.stop();
+        runningRef.current = null;
+        setScanning(false);
+        setCameraError(describeCameraError(err));
+        return;
+      }
+      if (cancelled) return;
+
+      setScanning(true);
+      loop();
+
+      try {
+        setActiveCameraId(stream.getVideoTracks()[0]?.getSettings().deviceId ?? "");
+        // Labels are only populated once permission is granted, so list cameras after the start.
+        const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === "videoinput");
+        if (!cancelled) {
+          setCameras(devices.map((d, i) => ({ id: d.deviceId, label: d.label || `Camera ${i + 1}` })));
+        }
+      } catch {
+        // The camera list is optional; scanning already works.
       }
     });
 
     return () => {
       cancelled = true;
       enqueue(async () => {
-        const scanner = scannerRef.current;
-        scannerRef.current = null;
-        if (!scanner) return;
-        try {
-          // Always attempt the stop. Its isScanning flag only flips once the video surface is ready,
-          // so trusting it skipped the stop for a camera that was still coming up and left it running.
-          await scanner.stop();
-        } catch {
-          // Rejects when the scanner was never running, which is fine.
-        }
-        try {
-          scanner.clear();
-        } catch {}
+        runningRef.current?.stop();
+        runningRef.current = null;
       });
     };
   }, [active, paused, cameraId, retryTick, viewportId, dedupeMs]);

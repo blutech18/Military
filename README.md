@@ -13,7 +13,7 @@ A military-grade, IoT-enabled, web-based platform that combines **real-time GPS 
 | Pillar | Implementation |
 |---|---|
 | Real-time GPS tracking | ESP32 + GY-NEO6MV2 ? encrypted HTTPS POST ? Laravel ingestion ? Leaflet.js live map (?5 s latency, ?10 m accuracy, 30 s cadence) |
-| QR Identification | `html5-qrcode` browser scanner, unique QR per firearm, instant DB lookup |
+| QR Identification | in-browser camera scanner (ZXing-C++ via WebAssembly), unique QR per firearm, instant DB lookup |
 | Biometric AuthN | Futronic FS80H/FS88H fingerprint + bcrypt(12) password + Google Authenticator TOTP |
 | Access Control | RBAC (Administrator, Command Officer, S4 Officer, Armory Custodian, Personnel) + Clearance (Confidential, Secret, Top Secret) |
 | Audit | Append-only `audit_logs` with IP, timestamp, user, firearm, action |
@@ -41,7 +41,7 @@ realtime-gps/
 - Next.js 14 (App Router) · TypeScript · Tailwind CSS · ShadCN UI
 - Framer Motion (60 fps micro-interactions)
 - Leaflet.js (live tactical map)
-- `html5-qrcode` (browser camera QR scanning)
+- `zxing-wasm` (browser camera QR scanning, ZXing-C++ compiled to WebAssembly)
 - Zustand (state) · Axios (HTTP) · React Query (server cache)
 - Recharts (dashboard charts)
 

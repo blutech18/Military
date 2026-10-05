@@ -34,6 +34,7 @@ import {
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useQrCamera } from "@/lib/use-qr-camera";
+import { decodeQrFromFile } from "@/lib/qr-decoder";
 import { CONDITIONS, STATUSES, cn } from "@/lib/utils";
 
 interface ActiveTransaction {
@@ -174,10 +175,8 @@ export default function ScanPage() {
 
     setLoading(true);
     try {
-      const { Html5Qrcode } = await import("html5-qrcode");
-      const html5Qr = new Html5Qrcode("file-scan-dummy");
-      const decoded = await html5Qr.scanFile(file, true);
-      html5Qr.clear();
+      const decoded = await decodeQrFromFile(file);
+      if (!decoded) throw new Error("No QR code found");
       await performLookup(decoded);
     } catch {
       toast.error("No valid QR code detected in the uploaded image.");
@@ -201,9 +200,6 @@ export default function ScanPage() {
 
   return (
     <>
-      {/* Hidden container for image decoding */}
-      <div id="file-scan-dummy" className="hidden" aria-hidden="true" />
-
       <div className="space-y-6">
         {/* Page Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-olive-700/20">
