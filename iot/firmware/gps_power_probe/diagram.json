@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "author": "ArmoryDB · 10RCDG",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    {
+      "type": "wokwi-resistor",
+      "id": "r1",
+      "top": -20,
+      "left": 190,
+      "attrs": { "value": "330" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "jumperC",
+      "top": 60,
+      "left": 300,
+      "attrs": { "color": "red", "label": "JUMPER C", "bounce": "0" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rGps",
+      "top": 150,
+      "left": 300,
+      "attrs": { "value": "68" }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "noteTitle",
+      "top": -110,
+      "left": 160,
+      "attrs": {
+        "text": "GPS power probe: ESP32 3V3 > 330 ohm > GPS VCC, with D4 reading the voltage in between.",
+        "fontSize": "14"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "noteGps",
+      "top": 215,
+      "left": 190,
+      "attrs": {
+        "text": "No GPS part exists in Wokwi. The button + 68 ohm stand in for the GPS board.\nButton released = jumper C not connected: D4 reads about 3.1 V.\nButton held = GPS connected. A healthy GPS pulls D4 down a bit; a shorted GPS pulls it to 0 V.",
+        "fontSize": "14"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "noteWire",
+      "top": 290,
+      "left": 190,
+      "attrs": {
+        "text": "Real hardware: jumper A = 3V3 to the resistor, jumper B = resistor to D4,\njumper C = resistor to GPS VCC (step 2 only), GPS GND to ESP32 GND (step 2 only).",
+        "fontSize": "14"
+      }
+    }
+  ],
+  "connections": [
+    [ "esp:TX0", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX0", "$serialMonitor:TX", "", [] ],
+    [ "esp:3V3", "r1:1", "red", [] ],
+    [ "r1:2", "esp:D4", "orange", [] ],
+    [ "r1:2", "jumperC:1.l", "purple", [] ],
+    [ "jumperC:2.l", "rGps:1", "purple", [] ],
+    [ "rGps:2", "esp:GND.2", "black", [] ]
+  ],
+  "dependencies": {}
+}
