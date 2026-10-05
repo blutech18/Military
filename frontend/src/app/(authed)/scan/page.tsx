@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { useQrCamera } from "@/lib/use-qr-camera";
 import { CONDITIONS, STATUSES, cn } from "@/lib/utils";
 
 interface ActiveTransaction {
@@ -80,17 +81,11 @@ interface RecentScan {
 export default function ScanPage() {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const scannerRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Mode: "camera" | "file"
   const [mode, setMode] = useState<"camera" | "file">("camera");
 
-  // Scanner States
-  const [scanning, setScanning] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [availableCameras, setAvailableCameras] = useState<Array<{ id: string; label: string }>>([]);
-  const [selectedCameraId, setSelectedCameraId] = useState<string>("");
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
 
   // Lookup Result & Session History
@@ -167,134 +162,10 @@ export default function ScanPage() {
     [handleResolve]
   );
 
-  // Stable ref for performLookup to avoid triggering camera restarts
-  const performLookupRef = useRef(performLookup);
-  useEffect(() => {
-    performLookupRef.current = performLookup;
-  }, [performLookup]);
-
-  const lastScanRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
-  const isStartingRef = useRef(false);
-
-  // Enumerate cameras once on mount without triggering camera restarts
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const { Html5Qrcode } = await import("html5-qrcode");
-        const devices = await Html5Qrcode.getCameras();
-        if (active && devices && devices.length > 0) {
-          const list = devices.map((d) => ({
-            id: d.id,
-            label: d.label || `Camera ${d.id.slice(0, 5)}`,
-          }));
-          setAvailableCameras(list);
-          setSelectedCameraId((prev) => prev || list[0].id);
-        }
-      } catch (err) {
-        console.warn("Could not enumerate cameras:", err);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  // Stable camera starter
-  const startCamera = useCallback(async (cameraId?: string) => {
-    if (isStartingRef.current) return;
-    isStartingRef.current = true;
-    setCameraError(null);
-
-    try {
-      const { Html5Qrcode } = await import("html5-qrcode");
-
-      // Safely tear down existing instance if any
-      if (scannerRef.current) {
-        const prev = scannerRef.current;
-        scannerRef.current = null;
-        try {
-          if (prev.isScanning) {
-            await prev.stop();
-          }
-        } catch {}
-        try {
-          prev.clear();
-        } catch {}
-      }
-
-      const viewport = document.getElementById("qr-camera-viewport");
-      if (!viewport) {
-        isStartingRef.current = false;
-        return;
-      }
-
-      const scanner = new Html5Qrcode("qr-camera-viewport");
-      scannerRef.current = scanner;
-
-      const targetCamera = cameraId ? cameraId : { facingMode: "environment" };
-
-      await scanner.start(
-        targetCamera,
-        {
-          fps: 15,
-        },
-        async (decodedText: string) => {
-          const now = Date.now();
-          if (decodedText === lastScanRef.current.text && now - lastScanRef.current.time < 3000) {
-            return;
-          }
-          lastScanRef.current = { text: decodedText, time: now };
-          await performLookupRef.current(decodedText);
-        },
-        () => {
-          // Ignore empty frames
-        }
-      );
-
-      setScanning(true);
-    } catch (err: any) {
-      console.error("Camera error:", err);
-      setScanning(false);
-      setCameraError(
-        err?.message?.includes("Permission")
-          ? "Camera permission denied. Please allow camera access in browser settings."
-          : "Could not start camera. Check connection or switch to Manual / USB mode."
-      );
-    } finally {
-      isStartingRef.current = false;
-    }
-  }, []);
-
-  // Stable camera stopper
-  const stopCamera = useCallback(async () => {
-    if (scannerRef.current) {
-      const prev = scannerRef.current;
-      scannerRef.current = null;
-      try {
-        if (prev.isScanning) {
-          await prev.stop();
-        }
-      } catch {}
-      try {
-        prev.clear();
-      } catch {}
-    }
-    setScanning(false);
-  }, []);
-
-  // Manage camera lifecycle strictly based on mode and selected camera id
-  useEffect(() => {
-    if (mode === "camera") {
-      startCamera(selectedCameraId || undefined);
-    } else {
-      stopCamera();
-    }
-
-    return () => {
-      stopCamera();
-    };
-  }, [mode, selectedCameraId, startCamera, stopCamera]);
+  // Live camera: start/stop is serialized inside the hook so tab switches, pausing and the
+  // camera list loading can never strand a running webcam stream.
+  const { scanning, cameraError, cameras: availableCameras, selectedCameraId, selectCamera, pause, resume, retry } =
+    useQrCamera({ viewportId: "qr-camera-viewport", active: mode === "camera", onDecode: performLookup, dedupeMs: 3000 });
 
   // Handle image file scan
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -422,85 +293,82 @@ export default function ScanPage() {
             </div>
 
             {/* TAB 1: LIVE CAMERA VIEWPORT */}
-            {mode === "camera" && (
-              <div className="flex-1 flex flex-col justify-between space-y-3">
-                <div className="relative aspect-video sm:aspect-[4/3] w-full max-h-[420px] mx-auto overflow-hidden rounded-lg bg-black border border-olive-700/50 shadow-inner flex items-center justify-center">
-                  {/* HTML5 QR Code Mount Target */}
-                  <div id="qr-camera-viewport" ref={containerRef} className="absolute inset-0 w-full h-full" />
+            {/* Stays mounted (hidden) on the upload tab so a camera start in flight is never torn out of the DOM. */}
+            <div className={cn("flex-1 flex-col justify-between space-y-3", mode === "camera" ? "flex" : "hidden")}>
+              <div className="relative aspect-video sm:aspect-[4/3] w-full max-h-[420px] mx-auto overflow-hidden rounded-lg bg-black border border-olive-700/50 shadow-inner flex items-center justify-center">
+                {/* HTML5 QR Code Mount Target */}
+                <div id="qr-camera-viewport" ref={containerRef} className="absolute inset-0 w-full h-full" />
 
-                  {/* Clean Viewfinder & Scan Line Overlay */}
-                  {scanning && !cameraError && (
-                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 overflow-hidden">
-                      <div className="relative w-full h-full max-w-xs max-h-64 sm:max-h-72 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] border border-yellow-500/40">
-                        {/* Tactical Reticle Corners */}
-                        <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-yellow-400 rounded-tl-lg z-20" />
-                        <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-yellow-400 rounded-tr-lg z-20" />
-                        <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-yellow-400 rounded-bl-lg z-20" />
-                        <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-yellow-400 rounded-br-lg z-20" />
+                {/* Clean Viewfinder & Scan Line Overlay */}
+                {scanning && !cameraError && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 overflow-hidden">
+                    <div className="relative w-full h-full max-w-xs max-h-64 sm:max-h-72 rounded-xl shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] border border-yellow-500/40">
+                      {/* Tactical Reticle Corners */}
+                      <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-yellow-400 rounded-tl-lg z-20" />
+                      <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-yellow-400 rounded-tr-lg z-20" />
+                      <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-yellow-400 rounded-bl-lg z-20" />
+                      <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-yellow-400 rounded-br-lg z-20" />
 
-                        {/* Sweeping Laser Beam with Glowing Core & Aura */}
-                        <div className="absolute left-0 right-0 h-1 bg-gradient-to-r from-yellow-400 via-white to-yellow-400 animate-laser z-10 shadow-[0_0_18px_4px_rgba(250,204,21,1)]">
-                          <div className="absolute left-0 right-0 -top-8 h-8 bg-gradient-to-b from-transparent to-yellow-400/25 pointer-events-none" />
-                          <div className="absolute left-0 right-0 top-1 h-8 bg-gradient-to-t from-transparent to-yellow-400/25 pointer-events-none" />
-                        </div>
+                      {/* Sweeping Laser Beam with Glowing Core & Aura */}
+                      <div className="absolute left-0 right-0 h-1 bg-gradient-to-r from-yellow-400 via-white to-yellow-400 animate-laser z-10 shadow-[0_0_18px_4px_rgba(250,204,21,1)]">
+                        <div className="absolute left-0 right-0 -top-8 h-8 bg-gradient-to-b from-transparent to-yellow-400/25 pointer-events-none" />
+                        <div className="absolute left-0 right-0 top-1 h-8 bg-gradient-to-t from-transparent to-yellow-400/25 pointer-events-none" />
                       </div>
                     </div>
-                  )}
-
-                  {/* Camera Error / Standby Overlay */}
-                  {cameraError && (
-                    <div className="p-6 text-center space-y-3 z-10 max-w-sm">
-                      <div className="h-10 w-10 mx-auto rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                        <CameraOff className="h-5 w-5" />
-                      </div>
-                      <p className="text-xs text-steel-300">{cameraError}</p>
-                      <div className="flex gap-2 justify-center pt-2">
-                        <button onClick={() => startCamera(selectedCameraId)} className="btn-secondary text-xs">
-                          <RefreshCw className="h-3 w-3" /> Retry
-                        </button>
-                        <button onClick={() => setMode("file")} className="btn-primary text-xs">
-                          Upload QR Image
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Camera Hardware Controls */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs mt-auto">
-                  {availableCameras.length > 1 && (
-                    <div className="flex items-center gap-1.5">
-                      <SlidersHorizontal className="h-3.5 w-3.5 text-steel-400" />
-                      <select
-                        value={selectedCameraId}
-                        onChange={(e) => {
-                          setSelectedCameraId(e.target.value);
-                        }}
-                        className="bg-steel-800 border border-olive-700/40 rounded px-2 py-1 text-xs text-olive-100"
-                      >
-                        {availableCameras.map((cam) => (
-                          <option key={cam.id} value={cam.id}>
-                            {cam.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2 ml-auto">
-                    {scanning ? (
-                      <button onClick={stopCamera} className="btn-ghost text-xs py-1 px-2.5 text-amber-400">
-                        <CameraOff className="h-3.5 w-3.5" /> Pause Feed
-                      </button>
-                    ) : (
-                      <button onClick={() => startCamera(selectedCameraId)} className="btn-secondary text-xs py-1 px-2.5">
-                        <Camera className="h-3.5 w-3.5" /> Start Camera
-                      </button>
-                    )}
                   </div>
+                )}
+
+                {/* Camera Error / Standby Overlay */}
+                {cameraError && (
+                  <div className="p-6 text-center space-y-3 z-10 max-w-sm">
+                    <div className="h-10 w-10 mx-auto rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                      <CameraOff className="h-5 w-5" />
+                    </div>
+                    <p className="text-xs text-steel-300">{cameraError}</p>
+                    <div className="flex gap-2 justify-center pt-2">
+                      <button onClick={retry} className="btn-secondary text-xs">
+                        <RefreshCw className="h-3 w-3" /> Retry
+                      </button>
+                      <button onClick={() => setMode("file")} className="btn-primary text-xs">
+                        Upload QR Image
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Camera Hardware Controls */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs mt-auto">
+                {availableCameras.length > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <SlidersHorizontal className="h-3.5 w-3.5 text-steel-400" />
+                    <select
+                      value={selectedCameraId}
+                      onChange={(e) => selectCamera(e.target.value)}
+                      className="bg-steel-800 border border-olive-700/40 rounded px-2 py-1 text-xs text-olive-100"
+                    >
+                      {availableCameras.map((cam) => (
+                        <option key={cam.id} value={cam.id}>
+                          {cam.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 ml-auto">
+                  {scanning ? (
+                    <button onClick={pause} className="btn-ghost text-xs py-1 px-2.5 text-amber-400">
+                      <CameraOff className="h-3.5 w-3.5" /> Pause Feed
+                    </button>
+                  ) : (
+                    <button onClick={resume} className="btn-secondary text-xs py-1 px-2.5">
+                      <Camera className="h-3.5 w-3.5" /> Start Camera
+                    </button>
+                  )}
                 </div>
               </div>
-            )}
+            </div>
 
             {/* TAB 2: UPLOAD QR IMAGE FILE */}
             {mode === "file" && (

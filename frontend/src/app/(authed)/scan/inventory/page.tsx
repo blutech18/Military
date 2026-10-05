@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { useQrCamera } from "@/lib/use-qr-camera";
 import { CONDITIONS, STATUSES, cn } from "@/lib/utils";
 
 interface ScannedItem {
@@ -35,20 +36,12 @@ interface ScannedItem {
 
 export default function InventoryValidationPage() {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const scannerRef = useRef<any>(null);
 
-  // Camera & Device states
-  const [scanning, setScanning] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [availableCameras, setAvailableCameras] = useState<Array<{ id: string; label: string }>>([]);
-  const [selectedCameraId, setSelectedCameraId] = useState<string>("");
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
 
   // Inventory validation items
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [notFound, setNotFound] = useState<string[]>([]);
-  const lastScanRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
-  const isStartingRef = useRef(false);
 
   // Sound Feedback via Web Audio API
   const playBeep = useCallback(() => {
@@ -74,30 +67,6 @@ export default function InventoryValidationPage() {
       osc.stop(ctx.currentTime + 0.08);
     } catch {}
   }, [soundEnabled]);
-
-  // Enumerate cameras once on mount
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const { Html5Qrcode } = await import("html5-qrcode");
-        const devices = await Html5Qrcode.getCameras();
-        if (active && devices && devices.length > 0) {
-          const list = devices.map((d) => ({
-            id: d.id,
-            label: d.label || `Camera ${d.id.slice(0, 5)}`,
-          }));
-          setAvailableCameras(list);
-          setSelectedCameraId((prev) => prev || list[0].id);
-        }
-      } catch (err) {
-        console.warn("Could not enumerate cameras:", err);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
 
   // Process firearm lookup
   const processLookup = useCallback(
@@ -147,95 +116,10 @@ export default function InventoryValidationPage() {
     [scannedItems, playBeep]
   );
 
-  const processLookupRef = useRef(processLookup);
-  useEffect(() => {
-    processLookupRef.current = processLookup;
-  }, [processLookup]);
-
-  // Start camera
-  const startCamera = useCallback(async (cameraId?: string) => {
-    if (isStartingRef.current) return;
-    isStartingRef.current = true;
-    setCameraError(null);
-
-    try {
-      const { Html5Qrcode } = await import("html5-qrcode");
-
-      if (scannerRef.current) {
-        const prev = scannerRef.current;
-        scannerRef.current = null;
-        try {
-          if (prev.isScanning) {
-            await prev.stop();
-          }
-        } catch {}
-        try {
-          prev.clear();
-        } catch {}
-      }
-
-      const viewport = document.getElementById("inventory-qr-viewport");
-      if (!viewport) {
-        isStartingRef.current = false;
-        return;
-      }
-
-      const scanner = new Html5Qrcode("inventory-qr-viewport");
-      scannerRef.current = scanner;
-
-      const targetCamera = cameraId ? cameraId : { facingMode: "environment" };
-
-      await scanner.start(
-        targetCamera,
-        { fps: 15 },
-        async (decodedText: string) => {
-          const now = Date.now();
-          if (decodedText === lastScanRef.current.text && now - lastScanRef.current.time < 2500) {
-            return;
-          }
-          lastScanRef.current = { text: decodedText, time: now };
-          await processLookupRef.current(decodedText);
-        },
-        () => {}
-      );
-
-      setScanning(true);
-    } catch (err: any) {
-      console.error("Camera error:", err);
-      setScanning(false);
-      setCameraError(
-        err?.message?.includes("Permission")
-          ? "Camera permission denied. Please allow camera access in browser settings."
-          : "Could not start camera. Check connection or HTTPS certificate."
-      );
-    } finally {
-      isStartingRef.current = false;
-    }
-  }, []);
-
-  // Stop camera
-  const stopCamera = useCallback(async () => {
-    if (scannerRef.current) {
-      const prev = scannerRef.current;
-      scannerRef.current = null;
-      try {
-        if (prev.isScanning) {
-          await prev.stop();
-        }
-      } catch {}
-      try {
-        prev.clear();
-      } catch {}
-    }
-    setScanning(false);
-  }, []);
-
-  useEffect(() => {
-    startCamera(selectedCameraId || undefined);
-    return () => {
-      stopCamera();
-    };
-  }, [selectedCameraId, startCamera, stopCamera]);
+  // Live camera: start/stop is serialized inside the hook so pausing, switching cameras and
+  // leaving the page can never strand a running webcam stream.
+  const { scanning, cameraError, cameras: availableCameras, selectedCameraId, selectCamera, pause, resume, retry } =
+    useQrCamera({ viewportId: "inventory-qr-viewport", onDecode: processLookup, dedupeMs: 2500 });
 
   function resetSession() {
     setScannedItems([]);
@@ -377,7 +261,7 @@ export default function InventoryValidationPage() {
                     </div>
                     <p className="text-xs text-steel-300">{cameraError}</p>
                     <div className="flex gap-2 justify-center pt-2">
-                      <button onClick={() => startCamera(selectedCameraId)} className="btn-secondary text-xs">
+                      <button onClick={retry} className="btn-secondary text-xs">
                         <RefreshCw className="h-3 w-3" /> Retry
                       </button>
                     </div>
@@ -392,7 +276,7 @@ export default function InventoryValidationPage() {
                     <SlidersHorizontal className="h-3.5 w-3.5 text-steel-400" />
                     <select
                       value={selectedCameraId}
-                      onChange={(e) => setSelectedCameraId(e.target.value)}
+                      onChange={(e) => selectCamera(e.target.value)}
                       className="bg-steel-800 border border-olive-700/40 rounded px-2 py-1 text-xs text-olive-100"
                     >
                       {availableCameras.map((cam) => (
@@ -406,11 +290,11 @@ export default function InventoryValidationPage() {
 
                 <div className="flex items-center gap-2 ml-auto">
                   {scanning ? (
-                    <button onClick={stopCamera} className="btn-ghost text-xs py-1 px-2.5 text-amber-400">
+                    <button onClick={pause} className="btn-ghost text-xs py-1 px-2.5 text-amber-400">
                       <CameraOff className="h-3.5 w-3.5" /> Pause Feed
                     </button>
                   ) : (
-                    <button onClick={() => startCamera(selectedCameraId)} className="btn-secondary text-xs py-1 px-2.5">
+                    <button onClick={resume} className="btn-secondary text-xs py-1 px-2.5">
                       <Camera className="h-3.5 w-3.5" /> Start Camera
                     </button>
                   )}
