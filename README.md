@@ -17,7 +17,7 @@ A military-grade, IoT-enabled, web-based platform that combines **real-time GPS 
 | Biometric AuthN | Futronic FS80H/FS88H fingerprint + bcrypt(12) password + Google Authenticator TOTP |
 | Access Control | RBAC (Administrator, Command Officer, S4 Officer, Armory Custodian, Personnel) + Clearance (Confidential, Secret, Top Secret) |
 | Audit | Append-only `audit_logs` with IP, timestamp, user, firearm, action |
-| Security | OWASP Top 10, AES-256 at rest, HTTPS-only, rate-limit 5 req/s, reCAPTCHA v3 after 3 failed logins, 15-min session expiry, HttpOnly cookies |
+| Security | OWASP Top 10, AES-256 at rest, HTTPS-only, rate-limit 5 req/s, reCAPTCHA v2 checkbox after 3 failed logins, 15-min session expiry, HttpOnly cookies |
 
 ---
 
@@ -140,7 +140,7 @@ ERD: see [`docs/erd.md`](docs/erd.md).
 - Rate limit: 5 req/s per IP+user (custom middleware)
 - CSRF, XSS, SQLi via Laravel + `express-validator`-style rules
 - TLS 1.3 only · HSTS preload · Content-Security-Policy
-- reCAPTCHA v3 after 3 failed logins
+- reCAPTCHA v2 checkbox after 3 failed logins
 - Immutable `audit_logs` (DB trigger blocks UPDATE/DELETE for non-DBA)
 
 ---

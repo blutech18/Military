@@ -158,6 +158,7 @@ class AuthTest extends TestCase
     {
         config([
             'armory.failed_login_threshold' => 1,
+            'armory.recaptcha.version' => 'v3',
             'armory.recaptcha.secret' => 'test-secret',
             'armory.recaptcha.verify_url' => 'https://recaptcha.test/verify',
             'armory.recaptcha.expected_action' => 'armory_login',
@@ -187,10 +188,67 @@ class AuthTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_recaptcha_v2_checkbox_accepts_a_verified_token_without_score_or_action(): void
+    {
+        config([
+            'armory.failed_login_threshold' => 1,
+            'armory.recaptcha.version' => 'v2',
+            'armory.recaptcha.secret' => 'test-secret',
+            'armory.recaptcha.verify_url' => 'https://recaptcha.test/verify',
+            'armory.recaptcha.expected_hostname' => 'armory.test',
+        ]);
+        Http::fake([
+            'https://recaptcha.test/verify' => Http::response([
+                'success' => true,
+                'hostname' => 'armory.test',
+            ]),
+        ]);
+
+        $this->postJson('/api/v1/auth/login', [
+            'username' => 'admin',
+            'password' => 'wrong',
+        ])->assertUnauthorized();
+
+        $this->postJson('/api/v1/auth/login', [
+            'username' => 'admin',
+            'password' => 'Admin@10RCDG!2025',
+            'recaptcha_token' => 'ticked-checkbox-token',
+        ])->assertOk()->assertJsonStructure(['challenge_token']);
+    }
+
+    public function test_recaptcha_v2_rejects_failed_or_wrong_hostname_verification(): void
+    {
+        config([
+            'armory.failed_login_threshold' => 1,
+            'armory.recaptcha.version' => 'v2',
+            'armory.recaptcha.secret' => 'test-secret',
+            'armory.recaptcha.verify_url' => 'https://recaptcha.test/verify',
+            'armory.recaptcha.expected_hostname' => 'armory.test',
+        ]);
+        $this->postJson('/api/v1/auth/login', [
+            'username' => 'admin',
+            'password' => 'wrong',
+        ])->assertUnauthorized();
+
+        foreach ([
+            ['success' => false, 'error-codes' => ['invalid-input-response']],
+            ['success' => true, 'hostname' => 'evil.example'],
+        ] as $googleReply) {
+            Http::fake(['https://recaptcha.test/verify' => Http::response($googleReply)]);
+
+            $this->postJson('/api/v1/auth/login', [
+                'username' => 'admin',
+                'password' => 'Admin@10RCDG!2025',
+                'recaptcha_token' => 'token',
+            ])->assertStatus(429)->assertJson(['recaptcha_required' => true]);
+        }
+    }
+
     public function test_recaptcha_fails_closed_for_mismatched_or_unavailable_verification(): void
     {
         config([
             'armory.failed_login_threshold' => 1,
+            'armory.recaptcha.version' => 'v3',
             'armory.recaptcha.secret' => 'test-secret',
             'armory.recaptcha.verify_url' => 'https://recaptcha.test/verify',
             'armory.recaptcha.expected_action' => 'login',

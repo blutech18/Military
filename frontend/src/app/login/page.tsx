@@ -19,6 +19,7 @@ import { api } from "@/lib/api";
 import { AxiosError } from "axios";
 import { BrandLogo } from "@/components/brand-logo";
 import { useAuthStore } from "@/store/auth";
+import { RecaptchaCheckbox, RecaptchaCheckboxHandle } from "@/components/auth/recaptcha-checkbox";
 
 interface LoginResponse {
   message: string;
@@ -59,52 +60,10 @@ interface ResetPasswordResponse {
   username?: string;
 }
 
-type RecaptchaApi = {
-  ready(callback: () => void): void;
-  execute(siteKey: string, options: { action: string }): Promise<string>;
-};
-
 const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY ?? "";
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
-let recaptchaLoader: Promise<RecaptchaApi> | null = null;
-
-function loadRecaptcha(): Promise<RecaptchaApi> {
-  if (DEMO_MODE && !RECAPTCHA_SITE_KEY) {
-    return Promise.reject(new Error("demo"));
-  }
-
-  if (!RECAPTCHA_SITE_KEY) {
-    return Promise.reject(new Error("reCAPTCHA is not configured. Contact the system administrator."));
-  }
-
-  const existing = (window as Window & { grecaptcha?: RecaptchaApi }).grecaptcha;
-  if (existing) return Promise.resolve(existing);
-  if (recaptchaLoader) return recaptchaLoader;
-
-  recaptchaLoader = new Promise<RecaptchaApi>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = `https://www.google.com/recaptcha/api.js?render=${encodeURIComponent(RECAPTCHA_SITE_KEY)}`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      const api = (window as Window & { grecaptcha?: RecaptchaApi }).grecaptcha;
-      if (api) resolve(api);
-      else reject(new Error("reCAPTCHA failed to initialize."));
-    };
-    script.onerror = () => reject(new Error("reCAPTCHA could not be loaded."));
-    document.head.appendChild(script);
-  });
-
-  return recaptchaLoader;
-}
-
-async function createRecaptchaToken(action: string): Promise<string> {
-  if (DEMO_MODE && !RECAPTCHA_SITE_KEY) return "demo-recaptcha-bypass";
-
-  const recaptcha = await loadRecaptcha();
-  await new Promise<void>((resolve) => recaptcha.ready(resolve));
-  return recaptcha.execute(RECAPTCHA_SITE_KEY, { action });
-}
+// Demo builds without a site key skip the widget; the backend only honours this token in demo mode.
+const RECAPTCHA_DEMO_BYPASS = DEMO_MODE && !RECAPTCHA_SITE_KEY;
 
 type AuthMode = "login" | "forgot_request" | "forgot_verify" | "forgot_new_password";
 
@@ -119,6 +78,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showRecaptcha, setShowRecaptcha] = useState(false);
+  const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
+  const recaptchaRef = useRef<RecaptchaCheckboxHandle | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Forgot password form state
@@ -235,15 +196,16 @@ export default function LoginPage() {
 
   async function submitLogin(e: React.FormEvent) {
     e.preventDefault();
+    if (showRecaptcha && !RECAPTCHA_DEMO_BYPASS && !recaptchaToken) {
+      toast.warning("Please tick \"I'm not a robot\" before signing in.");
+      return;
+    }
     setLoading(true);
     try {
-      const recaptchaToken = showRecaptcha
-        ? await createRecaptchaToken(authRequirements?.recaptcha_action ?? "login")
-        : undefined;
       const { data } = await api.post<LoginResponse>("/auth/login", {
         username,
         password,
-        recaptcha_token: recaptchaToken,
+        recaptcha_token: showRecaptcha ? (RECAPTCHA_DEMO_BYPASS ? "demo-recaptcha-bypass" : recaptchaToken) : undefined,
       });
 
       // If both MFA methods are disabled, the backend returns a token directly
@@ -272,6 +234,8 @@ export default function LoginPage() {
         router.push("/login/totp");
       }
     } catch (error: unknown) {
+      // A reCAPTCHA token works once; make the user tick the box again for the next attempt.
+      recaptchaRef.current?.reset();
       if (error instanceof AxiosError) {
         if (error.response?.status === 429 && error.response.data?.recaptcha_required) {
           setShowRecaptcha(true);
@@ -525,12 +489,22 @@ export default function LoginPage() {
                 </div>
 
                 {showRecaptcha && (
-                  <div className="mt-3 mb-2 rounded-md border border-amber-700/40 bg-amber-900/20 p-3 text-xs text-amber-200 text-center leading-relaxed">
-                    Multiple failed attempts detected. Google reCAPTCHA v3 will verify this retry when you submit.
+                  <div className="mt-3 mb-2 rounded-md border border-amber-700/40 bg-amber-900/20 p-3 text-xs text-amber-200 text-center leading-relaxed space-y-3">
+                    <p>Multiple failed attempts detected. Please confirm you are not a robot to continue.</p>
+                    {RECAPTCHA_DEMO_BYPASS ? null : RECAPTCHA_SITE_KEY ? (
+                      <RecaptchaCheckbox ref={recaptchaRef} siteKey={RECAPTCHA_SITE_KEY} onChange={setRecaptchaToken} />
+                    ) : (
+                      <p className="text-red-300">reCAPTCHA is not configured. Contact the system administrator.</p>
+                    )}
                   </div>
                 )}
 
-                <button type="submit" disabled={loading} className="btn-primary w-full mt-6" tabIndex={4}>
+                <button
+                  type="submit"
+                  disabled={loading || (showRecaptcha && !RECAPTCHA_DEMO_BYPASS && !recaptchaToken)}
+                  className="btn-primary w-full mt-6"
+                  tabIndex={4}
+                >
                   {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                   {submitLabel}
                 </button>

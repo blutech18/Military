@@ -799,11 +799,19 @@ class AuthController extends Controller
         $result = $response->json();
         $expectedHostname = (string) config('armory.recaptcha.expected_hostname');
 
-        return is_array($result)
-            && ($result['success'] ?? false) === true
-            && ($result['action'] ?? null) === config('armory.recaptcha.expected_action')
-            && (float) ($result['score'] ?? 0) >= (float) config('armory.recaptcha.min_score')
-            && ($expectedHostname === '' || ($result['hostname'] ?? null) === $expectedHostname);
+        if (! is_array($result)
+            || ($result['success'] ?? false) !== true
+            || ($expectedHostname !== '' && ($result['hostname'] ?? null) !== $expectedHostname)) {
+            return false;
+        }
+
+        // v2 is pass/fail: Google reports no score or action, so a verified token is enough.
+        if (config('armory.recaptcha.version', 'v2') === 'v2') {
+            return true;
+        }
+
+        return ($result['action'] ?? null) === config('armory.recaptcha.expected_action')
+            && (float) ($result['score'] ?? 0) >= (float) config('armory.recaptcha.min_score');
     }
 
     protected function demoModeAllowed(): bool

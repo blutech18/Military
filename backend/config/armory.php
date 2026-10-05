@@ -26,6 +26,8 @@ return [
     ],
 
     'recaptcha' => [
+        // 'v2' = "I'm not a robot" checkbox (pass/fail); 'v3' = invisible score-based check.
+        'version'          => env('RECAPTCHA_VERSION', 'v2'),
         'site_key'         => env('RECAPTCHA_SITE_KEY', ''),
         'secret'           => env('RECAPTCHA_SECRET_KEY', ''),
         'min_score'        => (float) env('RECAPTCHA_MIN_SCORE', 0.5),
