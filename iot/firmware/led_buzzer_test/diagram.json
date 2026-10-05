@@ -1,0 +1,199 @@
+{
+  "version": 1,
+  "author": "ArmoryDB \u00b7 10RCDG",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledWifi",
+      "top": -100,
+      "left": 180,
+      "attrs": {
+        "color": "green",
+        "label": "WIFI"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rWifi",
+      "top": -40,
+      "left": 180,
+      "attrs": {
+        "value": "330"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledFix",
+      "top": -100,
+      "left": 250,
+      "attrs": {
+        "color": "blue",
+        "label": "GPS FIX"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rFix",
+      "top": -40,
+      "left": 250,
+      "attrs": {
+        "value": "330"
+      }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "ledTx",
+      "top": -100,
+      "left": 320,
+      "attrs": {
+        "color": "yellow",
+        "label": "UPLINK"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "rTx",
+      "top": -40,
+      "left": 320,
+      "attrs": {
+        "value": "330"
+      }
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "buzzer",
+      "top": 130,
+      "left": 330,
+      "attrs": {
+        "volume": "0.5"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "notePins",
+      "top": -230,
+      "left": 180,
+      "attrs": {
+        "text": "Green D4   Blue D21   Yellow D22   Buzzer D23\nAll on the 3V3 side of the board. Every LED: pin > 330 ohm > LED > GND.",
+        "fontSize": "14"
+      }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "noteUsb",
+      "top": 270,
+      "left": -60,
+      "attrs": {
+        "text": "Real hardware: unplug USB before wiring.",
+        "fontSize": "14"
+      }
+    }
+  ],
+  "connections": [
+    [
+      "esp:D4",
+      "rWifi:1",
+      "green",
+      [
+        "v-20",
+        "h0"
+      ]
+    ],
+    [
+      "rWifi:2",
+      "ledWifi:A",
+      "green",
+      [
+        "v-10"
+      ]
+    ],
+    [
+      "ledWifi:C",
+      "esp:GND.2",
+      "black",
+      [
+        "v-20",
+        "h-60"
+      ]
+    ],
+    [
+      "esp:D21",
+      "rFix:1",
+      "blue",
+      [
+        "v-20",
+        "h0"
+      ]
+    ],
+    [
+      "rFix:2",
+      "ledFix:A",
+      "blue",
+      [
+        "v-10"
+      ]
+    ],
+    [
+      "ledFix:C",
+      "esp:GND.2",
+      "black",
+      [
+        "v-20",
+        "h-120"
+      ]
+    ],
+    [
+      "esp:D22",
+      "rTx:1",
+      "gold",
+      [
+        "v-20",
+        "h0"
+      ]
+    ],
+    [
+      "rTx:2",
+      "ledTx:A",
+      "gold",
+      [
+        "v-10"
+      ]
+    ],
+    [
+      "ledTx:C",
+      "esp:GND.2",
+      "black",
+      [
+        "v-20",
+        "h-180"
+      ]
+    ],
+    [
+      "esp:D23",
+      "buzzer:1",
+      "purple",
+      [
+        "h30",
+        "v0"
+      ]
+    ],
+    [
+      "buzzer:2",
+      "esp:GND.2",
+      "black",
+      [
+        "h-30",
+        "v0"
+      ]
+    ]
+  ],
+  "dependencies": {}
+}
