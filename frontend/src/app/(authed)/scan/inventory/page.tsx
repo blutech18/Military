@@ -21,7 +21,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { useQrCamera } from "@/lib/use-qr-camera";
+import { useQrCamera, type ScanFeedback } from "@/lib/use-qr-camera";
+import { ScanDetectionOverlay } from "@/components/scan/scan-detection-overlay";
 import { CONDITIONS, STATUSES, cn } from "@/lib/utils";
 
 interface ScannedItem {
@@ -70,7 +71,7 @@ export default function InventoryValidationPage() {
 
   // Process firearm lookup
   const processLookup = useCallback(
-    async (decoded: string) => {
+    async (decoded: string): Promise<ScanFeedback | undefined> => {
       const trimmed = decoded.trim();
       if (!trimmed) return;
 
@@ -82,12 +83,16 @@ export default function InventoryValidationPage() {
       } catch {}
 
       // Avoid processing duplicates
-      if (scannedItems.some((i) => i.serial_number === serialCandidate)) {
-        return;
+      const alreadyCounted = scannedItems.find((i) => i.serial_number === serialCandidate);
+      if (alreadyCounted) {
+        return { status: "duplicate", label: `${alreadyCounted.serial_number} · ${alreadyCounted.model}` };
       }
 
       try {
         const { data } = await api.post("/firearms/lookup", { qr_payload: trimmed });
+        if (scannedItems.some((i) => i.equipment_id === data.equipment_id)) {
+          return { status: "duplicate", label: `${data.serial_number} · ${data.model}` };
+        }
         setScannedItems((prev) => {
           if (prev.some((i) => i.equipment_id === data.equipment_id)) return prev;
           playBeep();
@@ -105,12 +110,14 @@ export default function InventoryValidationPage() {
             ...prev,
           ];
         });
+        return { status: "success", label: `${data.serial_number} · ${data.model}` };
       } catch {
         setNotFound((prev) => {
           if (prev.includes(trimmed)) return prev;
           toast.error("Firearm not registered in database.");
           return [trimmed, ...prev];
         });
+        return { status: "error", label: "Not registered in the armory database" };
       }
     },
     [scannedItems, playBeep]
@@ -118,8 +125,8 @@ export default function InventoryValidationPage() {
 
   // Live camera: start/stop is serialized inside the hook so pausing, switching cameras and
   // leaving the page can never strand a running webcam stream.
-  const { scanning, cameraError, cameras: availableCameras, selectedCameraId, selectCamera, pause, resume, retry } =
-    useQrCamera({ viewportId: "inventory-qr-viewport", onDecode: processLookup, dedupeMs: 2500 });
+  const { scanning, detection, cameraError, cameras: availableCameras, selectedCameraId, selectCamera, pause, resume, retry } =
+    useQrCamera({ viewportId: "inventory-qr-viewport", onDecode: processLookup, rearmMs: 1500 });
 
   function resetSession() {
     setScannedItems([]);
@@ -233,6 +240,7 @@ export default function InventoryValidationPage() {
               <div className="relative aspect-[4/3] w-full max-h-[420px] mx-auto overflow-hidden rounded-lg bg-black border border-olive-700/50 shadow-inner flex items-center justify-center">
                 {/* HTML5 QR Code Mount Target */}
                 <div id="inventory-qr-viewport" ref={containerRef} className="absolute inset-0 w-full h-full" />
+                <ScanDetectionOverlay detection={detection} />
 
                 {/* Viewfinder & Animated Laser Overlay */}
                 {scanning && !cameraError && (

@@ -8,14 +8,32 @@ export interface QrCameraOption {
   label: string;
 }
 
+/** What a page reports back after handling a scanned code, so the camera view can show it. */
+export interface ScanFeedback {
+  status: "success" | "duplicate" | "error";
+  /** Short text shown inside the camera view, e.g. "PA-PI-001 · M1911A1 Pistol". */
+  label?: string;
+}
+
+/** What the camera view is currently showing: "detected" while the lookup is in flight. */
+export interface ScanDetection {
+  status: "detected" | ScanFeedback["status"];
+  label?: string;
+  /** Changes on every new detection so the overlay can restart its animation. */
+  id: number;
+}
+
 interface UseQrCameraOptions {
   /** DOM id of the element the camera preview is rendered into. */
   viewportId: string;
   /** The camera runs only while this is true (e.g. the Live Camera tab is open). */
   active?: boolean;
-  onDecode: (text: string) => void | Promise<void>;
-  /** Ignore the same decoded text if it repeats within this window. */
-  dedupeMs?: number;
+  onDecode: (text: string) => void | ScanFeedback | Promise<void | ScanFeedback>;
+  /**
+   * A code that stays in view is accepted once. It can only be accepted again after it has been
+   * out of view for this long, or after a different code has been scanned.
+   */
+  rearmMs?: number;
 }
 
 /** Longest side, in pixels, of the frame handed to the decoder. */
@@ -58,10 +76,12 @@ interface RunningCamera {
  * is still in flight and then releases it; a camera that finishes starting after its cleanup has
  * run is stopped immediately instead of being left on.
  */
-export function useQrCamera({ viewportId, active = true, onDecode, dedupeMs = 3000 }: UseQrCameraOptions) {
+export function useQrCamera({ viewportId, active = true, onDecode, rearmMs = 1500 }: UseQrCameraOptions) {
   const runningRef = useRef<RunningCamera | null>(null);
   const chainRef = useRef<Promise<void>>(Promise.resolve());
-  const lastScanRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
+  const lastSeenRef = useRef<{ text: string; time: number }>({ text: "", time: 0 });
+  const detectionIdRef = useRef(0);
+  const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onDecodeRef = useRef(onDecode);
   useEffect(() => {
     onDecodeRef.current = onDecode;
@@ -74,10 +94,18 @@ export function useQrCamera({ viewportId, active = true, onDecode, dedupeMs = 30
   const [scanning, setScanning] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [retryTick, setRetryTick] = useState(0);
+  const [detection, setDetection] = useState<ScanDetection | null>(null);
+
+  /** Keep the on-camera message up while the code is in view; drop it shortly after it leaves. */
+  const holdDetection = useCallback(() => {
+    if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+    clearTimerRef.current = setTimeout(() => setDetection(null), rearmMs + 500);
+  }, [rearmMs]);
 
   useEffect(() => {
     if (!active || paused) {
       setScanning(false);
+      setDetection(null);
       return;
     }
 
@@ -160,9 +188,32 @@ export function useQrCamera({ viewportId, active = true, onDecode, dedupeMs = 30
           const text = await decodeQrFromImageData(context.getImageData(0, 0, width, height));
           if (text && !stopped) {
             const now = Date.now();
-            if (text === lastScanRef.current.text && now - lastScanRef.current.time < dedupeMs) return;
-            lastScanRef.current = { text, time: now };
-            await onDecodeRef.current(text);
+            const stillInView = text === lastSeenRef.current.text && now - lastSeenRef.current.time < rearmMs;
+            lastSeenRef.current = { text, time: now };
+            if (stillInView) {
+              holdDetection(); // same code, not re-accepted: just keep the message on screen
+              return;
+            }
+
+            const id = ++detectionIdRef.current;
+            try {
+              navigator.vibrate?.(60); // buzz on phones that support it (not iOS Safari)
+            } catch {
+              // Vibration is a nicety.
+            }
+            setDetection({ status: "detected", id });
+            holdDetection();
+
+            let feedback: void | ScanFeedback;
+            try {
+              feedback = await onDecodeRef.current(text);
+            } catch {
+              feedback = { status: "error", label: "Lookup failed. Try again." };
+            }
+            if (!stopped) {
+              setDetection({ status: feedback?.status ?? "success", label: feedback?.label, id });
+              holdDetection();
+            }
           }
         } catch (err) {
           console.warn("QR decode attempt failed:", err);
@@ -220,12 +271,14 @@ export function useQrCamera({ viewportId, active = true, onDecode, dedupeMs = 30
 
     return () => {
       cancelled = true;
+      if (clearTimerRef.current) clearTimeout(clearTimerRef.current);
+      lastSeenRef.current = { text: "", time: 0 };
       enqueue(async () => {
         runningRef.current?.stop();
         runningRef.current = null;
       });
     };
-  }, [active, paused, cameraId, retryTick, viewportId, dedupeMs]);
+  }, [active, paused, cameraId, retryTick, viewportId, rearmMs, holdDetection]);
 
   const pause = useCallback(() => setPaused(true), []);
   const resume = useCallback(() => setPaused(false), []);
@@ -236,6 +289,7 @@ export function useQrCamera({ viewportId, active = true, onDecode, dedupeMs = 30
 
   return {
     scanning,
+    detection,
     cameraError,
     cameras,
     selectedCameraId: cameraId || activeCameraId,

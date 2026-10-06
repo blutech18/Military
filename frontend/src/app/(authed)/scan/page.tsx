@@ -33,7 +33,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { useQrCamera } from "@/lib/use-qr-camera";
+import { useQrCamera, type ScanFeedback } from "@/lib/use-qr-camera";
+import { ScanDetectionOverlay } from "@/components/scan/scan-detection-overlay";
 import { decodeQrFromFile } from "@/lib/qr-decoder";
 import { CONDITIONS, STATUSES, cn } from "@/lib/utils";
 
@@ -147,15 +148,18 @@ export default function ScanPage() {
 
   // Lookup by QR payload or raw serial string
   const performLookup = useCallback(
-    async (payloadStr: string) => {
+    async (payloadStr: string): Promise<ScanFeedback | undefined> => {
       const trimmed = payloadStr.trim();
       if (!trimmed) return;
       setLoading(true);
       try {
         const { data } = await api.post("/firearms/lookup", { qr_payload: trimmed });
         handleResolve(data);
+        return { status: "success", label: `${data.serial_number} · ${data.model}` };
       } catch (e: any) {
-        toast.error(e.response?.data?.message ?? "Firearm not found in database.");
+        const message = e.response?.data?.message ?? "Firearm not found in database.";
+        toast.error(message);
+        return { status: "error", label: message };
       } finally {
         setLoading(false);
       }
@@ -165,8 +169,8 @@ export default function ScanPage() {
 
   // Live camera: start/stop is serialized inside the hook so tab switches, pausing and the
   // camera list loading can never strand a running webcam stream.
-  const { scanning, cameraError, cameras: availableCameras, selectedCameraId, selectCamera, pause, resume, retry } =
-    useQrCamera({ viewportId: "qr-camera-viewport", active: mode === "camera", onDecode: performLookup, dedupeMs: 3000 });
+  const { scanning, detection, cameraError, cameras: availableCameras, selectedCameraId, selectCamera, pause, resume, retry } =
+    useQrCamera({ viewportId: "qr-camera-viewport", active: mode === "camera", onDecode: performLookup, rearmMs: 1500 });
 
   // Handle image file scan
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -294,6 +298,7 @@ export default function ScanPage() {
               <div className="relative aspect-[4/3] w-full max-h-[420px] mx-auto overflow-hidden rounded-lg bg-black border border-olive-700/50 shadow-inner flex items-center justify-center">
                 {/* HTML5 QR Code Mount Target */}
                 <div id="qr-camera-viewport" ref={containerRef} className="absolute inset-0 w-full h-full" />
+                <ScanDetectionOverlay detection={detection} />
 
                 {/* Clean Viewfinder & Scan Line Overlay */}
                 {scanning && !cameraError && (
