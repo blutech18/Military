@@ -43,9 +43,23 @@
 #include <LiquidCrystal_I2C.h>
 #endif
 
+/* Fix-quality rules for the real receiver. Override any of these in config.h. */
+#ifndef FIX_MAX_AGE_MS
+#define FIX_MAX_AGE_MS 3000 /* older than this = signal lost; never resend it as live */
+#endif
+#ifndef MIN_SATELLITES
+#define MIN_SATELLITES 4 /* fewer cannot give a trustworthy 3D position */
+#endif
+#ifndef MAX_HDOP
+#define MAX_HDOP 5.0 /* ~ +/-12 m; worse fixes jump around the map */
+#endif
+
 /* ========================= state ========================= */
 TinyGPSPlus gps;
 HardwareSerial GPSSerial(2); /* UART2 */
+/* Satellites the receiver can see (GSV), as opposed to the ones used in the fix (GGA).
+ * In the field this tells "blocked sky" (few in view) from "still locking" (many in view). */
+TinyGPSCustom satsInView(gps, "GPGSV", 3);
 
 unsigned long lastTxMs = 0;
 unsigned long lastWifiRetryMs = 0;
@@ -60,6 +74,10 @@ time_t lastAcceptedEpoch = 0; /* keeps captured_at strictly increasing */
  * with "'SendResult' does not name a type".
  * --------------------------------------------------------------------------- */
 enum SendResult { SEND_OK, SEND_RETRY, SEND_DROP };
+
+/* FIX_STALE: TinyGPSPlus keeps the last position "valid" after the signal is lost while the
+ * clock keeps ticking, so without an age check a frozen position would be posted as live. */
+enum FixState { FIX_NONE, FIX_STALE, FIX_WEAK, FIX_GOOD };
 
 /* Short-lived queue for fixes taken while the link was down.
  * Kept in RAM only: the API discards anything older than its freshness
@@ -205,6 +223,17 @@ bool gpsEpoch(time_t* out) {
   *out = civilToEpoch(gps.date.year(), gps.date.month(), gps.date.day(),
                       gps.time.hour(), gps.time.minute(), gps.time.second());
   return true;
+}
+
+unsigned long satellitesUsed() { return gps.satellites.isValid() ? gps.satellites.value() : 0UL; }
+unsigned long satellitesInView() { return satsInView.isValid() ? strtoul(satsInView.value(), nullptr, 10) : 0UL; }
+double currentHdop() { return gps.hdop.isValid() ? gps.hdop.hdop() : 99.99; }
+
+FixState currentFix() {
+  if (!gps.location.isValid()) return FIX_NONE;
+  if (gps.location.age() > FIX_MAX_AGE_MS) return FIX_STALE;
+  if (satellitesUsed() < MIN_SATELLITES || currentHdop() > MAX_HDOP) return FIX_WEAK;
+  return FIX_GOOD;
 }
 
 void connectWifi() {
@@ -512,7 +541,7 @@ void loop() {
 #endif
 
 #if HAS_STATUS_LEDS
-  setStatusLeds(WiFi.status() == WL_CONNECTED, gps.location.isValid());
+  setStatusLeds(WiFi.status() == WL_CONNECTED, currentFix() == FIX_GOOD);
 #endif
 
   if (millis() - lastTxMs < (unsigned long) TX_INTERVAL_MS) {
@@ -521,18 +550,30 @@ void loop() {
   }
   lastTxMs = millis();
 
-  if (!gps.location.isValid()) {
+  const FixState fix = currentFix();
+  if (fix != FIX_GOOD) {
 #if SIMULATE_GPS
-    Serial.println("[gps] waiting for NTP before the first simulated fix");
+    if (fix == FIX_NONE) {
+      Serial.println("[gps] waiting for NTP before the first simulated fix");
 #if HAS_LCD
-    lcdStatus("Waiting for NTP", "no fix yet");
+      lcdStatus("Waiting for NTP", "no fix yet");
 #endif
-#else
-    Serial.printf("[gps] no fix yet (satellites=%lu)\n",
-                  gps.satellites.isValid() ? (unsigned long) gps.satellites.value() : 0UL);
+      return;
+    }
+#endif
+    if (fix == FIX_NONE) {
+      Serial.printf("[gps] no fix yet (satellites in view=%lu, used=%lu)%s\n", satellitesInView(), satellitesUsed(),
+                    satellitesInView() < 4 ? "  <- sky blocked? move to open sky" : "  <- locking on, keep it still");
+    } else if (fix == FIX_STALE) {
+      Serial.printf("[gps] fix lost: last position is %.1f s old, holding (in view=%lu)\n",
+                    gps.location.age() / 1000.0, satellitesInView());
+    } else {
+      Serial.printf("[gps] fix too weak: used=%lu (need >=%d), hdop=%.1f (need <=%.1f), holding\n",
+                    satellitesUsed(), MIN_SATELLITES, currentHdop(), (double) MAX_HDOP);
+    }
 #if HAS_LCD
-    lcdStatus("Acquiring GPS", "antenna to sky");
-#endif
+    lcdStatus(fix == FIX_WEAK ? "Weak GPS fix" : (fix == FIX_STALE ? "GPS fix lost" : "Acquiring GPS"),
+              "antenna to sky");
 #endif
     return;
   }

@@ -65,6 +65,15 @@
  * Queued fixes older than this are discarded instead of being rejected. */
 #define MAX_FIX_AGE_SECONDS 240
 
+/* Fix quality for the real receiver (optional; the firmware uses these defaults).
+ * A fix is only sent when it is fresh, uses enough satellites and has a decent HDOP.
+ * Lower MIN_SATELLITES / raise MAX_HDOP only if a demo site has a partly blocked sky:
+ * the trade-off is points that jump around the map.
+ *   #define FIX_MAX_AGE_MS 3000   position older than this = signal lost, not re-sent
+ *   #define MIN_SATELLITES 4
+ *   #define MAX_HDOP 5.0          about +/-12 m
+ */
+
 /* ---------- GPS wiring (UART2) ---------- */
 #define GPS_RX_PIN 16 /* ESP32 GPIO16  <-- GPS TX */
 #define GPS_TX_PIN 17 /* ESP32 GPIO17  --> GPS RX */
