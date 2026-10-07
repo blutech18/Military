@@ -1,0 +1,448 @@
+================================================================================
+  ArmoryDB - 10RCDG Firearm Tracking System
+  RUNNING THE SYSTEM BY HAND (no .bat files)
+================================================================================
+
+This guide starts every part of the system with plain commands, one terminal
+window per part, so you can see what each piece does and learn the workflow.
+
+The system has five parts:
+
+  1. MySQL database ............ stores everything              (port 3306)
+  2. Backend  (Laravel / PHP) .. the API                         (port 8000)
+  3. Frontend (Next.js) ........ the website you open            (port 3000)
+  4. Biometric bridge (.NET) ... talks to the fingerprint reader (port 8787)
+  5. GPS tracker (ESP32) ....... the device on the firearm; posts its position
+                                  to the backend over Wi-Fi
+
+Start them in this order: 1 -> 2 -> 3 -> 4 (only if you use the fingerprint
+reader) -> 5. Keep every terminal window open while you use the system.
+Stop a part with Ctrl + C in its window.
+
+All commands below are for Windows PowerShell, run from the project folder
+(the folder that contains "backend", "frontend", "iot" ...). Example:
+
+    cd D:\Clients\Realtime-GPS
+
+
+--------------------------------------------------------------------------------
+ 0. ONE-TIME CHECKS
+--------------------------------------------------------------------------------
+
+Installed software:
+    php -v          PHP 8.4 or newer   (XAMPP's PHP is fine)
+    composer -V     Composer 2
+    node -v         Node.js 20.9 or newer
+    npm -v
+    mysql           MySQL / MariaDB    (XAMPP)
+
+If "php" is not recognised but XAMPP is installed, add XAMPP's PHP for the
+current window only:
+
+    $env:Path = "C:\xampp\php;C:\xampp\mysql\bin;" + $env:Path
+
+
+--------------------------------------------------------------------------------
+ 1. MYSQL DATABASE
+--------------------------------------------------------------------------------
+
+Easiest: open the XAMPP Control Panel and click "Start" next to MySQL.
+
+By hand, in its own terminal (leave it open):
+
+    C:\xampp\mysql\bin\mysqld.exe --defaults-file=C:\xampp\mysql\bin\my.ini
+
+Check that it is listening (in another terminal):
+
+    netstat -an | findstr :3306
+
+You should see a line ending in LISTENING.
+
+First time only - create the database (empty password is XAMPP's default):
+
+    C:\xampp\mysql\bin\mysql.exe -u root -e "CREATE DATABASE IF NOT EXISTS armorydb"
+
+
+--------------------------------------------------------------------------------
+ 2. BACKEND (Laravel API)
+--------------------------------------------------------------------------------
+
+First time only:
+
+    cd backend
+    composer install
+    Copy-Item .env.example .env
+    php artisan key:generate
+
+  Then open backend\.env and fill in at least:
+    DB_DATABASE=armorydb
+    DB_USERNAME=root
+    DB_PASSWORD=                      (empty for XAMPP's default)
+    IOT_HMAC_SECRET=<a long random secret, 32+ characters>
+                                      the GPS tracker must use the SAME value
+    BIOMETRIC_BRIDGE_HMAC_SECRET=<another long random secret>
+                                      the biometric bridge must use the SAME value
+    RECAPTCHA_SITE_KEY= / RECAPTCHA_SECRET_KEY=
+                                      Google reCAPTCHA v2 "I'm not a robot" keys
+
+  Create the tables and the starting data:
+
+    php artisan migrate --seed
+
+  The seeder prints the generated account passwords ONCE. Save them.
+
+After every "git pull":
+
+    cd backend
+    composer install
+    php artisan migrate
+
+Start the backend (every time), in its own terminal:
+
+    cd backend
+    php artisan serve --host 0.0.0.0 --port 8000
+
+  --host 0.0.0.0 makes the API reachable from other devices on the same
+  Wi-Fi, which the GPS tracker needs. Without it only this laptop can reach it.
+
+Check it works: open http://127.0.0.1:8000/up in a browser. You should see
+a green "Application up" page.
+
+If you edit backend\.env while it runs, apply the change with:
+
+    php artisan config:clear
+
+then stop (Ctrl + C) and start "php artisan serve" again.
+
+
+--------------------------------------------------------------------------------
+ 3. FRONTEND (the website)
+--------------------------------------------------------------------------------
+
+First time only:
+
+    cd frontend
+    Copy-Item .env.local.example .env.local
+
+  Open frontend\.env.local and set at least:
+    NEXT_PUBLIC_API_URL=http://127.0.0.1:8000/api/v1
+    NEXT_PUBLIC_RECAPTCHA_SITE_KEY=<the reCAPTCHA v2 site key>
+    NEXT_PUBLIC_BIOMETRIC_BRIDGE_URL=http://127.0.0.1:8787
+
+After every "git pull" (IMPORTANT - a pull downloads code, not packages):
+
+    cd frontend
+    npm install
+
+  "npm install" also copies the QR decoder file to
+  frontend\public\zxing_reader.wasm. If the QR scanner page shows
+  "Module not found: zxing-wasm" or cannot decode, run "npm install" again.
+
+Start the frontend (every time), in its own terminal:
+
+    cd frontend
+    npm run dev
+
+Open http://localhost:3000 and sign in.
+
+  Use http://localhost:3000 on this laptop, not the laptop's IP address:
+  browsers only allow the camera (QR scanner) on localhost or HTTPS.
+
+
+--------------------------------------------------------------------------------
+ 4. BIOMETRIC BRIDGE (only if the fingerprint reader is used)
+--------------------------------------------------------------------------------
+
+The bridge is a small Windows program that talks to the DigitalPersona
+U.are.U fingerprint reader. It needs two things installed once:
+  - the DigitalPersona One Touch for Windows SDK 1.4 (also installs the
+    reader's driver)
+  - the .NET SDK (only to build the bridge)
+
+4.1  Get the SDK (one time)
+  You receive a Google Drive link to "URU450 SDK Simple.zip" (about 20 MB).
+  The SDK is not in the project download because it is vendor software.
+
+  1. Open the Google Drive link and click Download. Windows saves it in
+     your Downloads folder.
+  2. Open the Downloads folder, right-click "URU450 SDK Simple.zip" ->
+     "Extract All..." -> keep the suggested location -> "Extract".
+
+  Check that the installer is in place. Paste this into PowerShell (from any
+  folder):
+
+      $downloads = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path
+      $setup = Get-ChildItem $downloads -Recurse -Filter Setup.exe -ErrorAction SilentlyContinue | Where-Object FullName -match '\\Install\\x64\\Setup\.exe$' | Select-Object -First 1 -ExpandProperty FullName
+      $setup
+
+  It must print a path ending in "\SDK\Install\x64\Setup.exe". If it prints
+  nothing, the zip is not extracted inside Downloads yet - do step 2 again.
+  (The first line finds your real Downloads folder, even if it was moved to
+  another drive.)
+
+4.2  Install the SDK and the reader driver (one time)
+  Unplug the fingerprint reader first. In the SAME PowerShell window as 4.1
+  (it remembers $setup), run:
+
+      Start-Process -FilePath $setup -Verb RunAs -Wait
+
+  Click "Yes" on the Windows permission prompt, then in the installer:
+  Next -> accept the licence -> Next -> Install -> Finish.
+  Restart Windows if it asks. Then plug the reader in.
+
+  Check the SDK is installed (must print True):
+
+      Test-Path "C:\Program Files\DigitalPersona\One Touch SDK\.NET\Bin\DPFPDevNET.dll"
+
+  Check Windows sees the reader (must show a line with Status "OK"):
+
+      Get-PnpDevice -PresentOnly | Where-Object FriendlyName -match "U.are.U|Fingerprint" | Format-Table Status, FriendlyName
+
+4.3  Install the .NET SDK (one time)
+  Check first - if this prints any version, skip to 4.4:
+
+      dotnet --list-sdks
+
+  Otherwise install it, then CLOSE and REOPEN the terminal:
+
+      winget install --id Microsoft.DotNet.SDK.8 -e
+
+  (No "winget"? Download the ".NET 8.0 SDK x64" installer from
+   https://dotnet.microsoft.com/en-us/download/dotnet/8.0 and run it.)
+
+4.4  Configure and build the bridge (one time)
+
+      cd biometric-bridge
+      Copy-Item bridge.settings.example.json bridge.settings.json
+      notepad bridge.settings.json
+
+  In Notepad set "hmac_secret" to the SAME value as
+  BIOMETRIC_BRIDGE_HMAC_SECRET in backend\.env, save, close. Then build:
+
+      dotnet build -c Release
+
+  It must end with "Build succeeded". If it says "DigitalPersona One Touch
+  for Windows SDK not found", step 4.2 did not finish - run it again.
+
+4.5  Start the bridge (every time), in its own terminal
+
+      cd biometric-bridge
+      Copy-Item bridge.settings.json bin\Release\bridge.settings.json -Force
+      .\bin\Release\ArmoryBiometricBridge.exe
+
+  (The copy keeps the running program's settings in sync with the file you
+  edit. Do it again whenever you change bridge.settings.json.)
+
+  Check it works, in another terminal:
+
+      curl.exe http://127.0.0.1:8787/health
+
+  200 = reader connected     503 = bridge running but no reader plugged in
+
+  Try the reader without the website (enroll a test finger, then verify):
+
+      .\bin\Release\ArmoryBiometricBridge.exe --test
+
+
+--------------------------------------------------------------------------------
+ 5. GPS TRACKER (ESP32 + GY-NEO6MV2)
+--------------------------------------------------------------------------------
+
+How it works:
+  The ESP32 reads the GPS module, joins a Wi-Fi network, and every few
+  seconds sends its position to the backend, signed with IOT_HMAC_SECRET.
+  The laptop running the backend must be on the SAME Wi-Fi as the tracker.
+  For a field demo that Wi-Fi is the phone's hotspot.
+
+Wiring (already done on the demo unit):
+    GPS VCC -> ESP32 3V3        GPS TX -> ESP32 D18
+    GPS GND -> ESP32 GND        GPS RX -> ESP32 D19
+    LEDs: green D4 = Wi-Fi, blue D21 = GPS fix, red D22 = send result
+          (each: pin -> 220-330 ohm resistor -> LED long leg; short leg -> GND)
+
+Everything below uses "arduino-cli", a command-line tool that builds the
+firmware and copies it onto the ESP32. Copy each block into PowerShell,
+from the project folder.
+
+5.1  Install arduino-cli (one time)
+
+      $dir = "$env:LOCALAPPDATA\arduino-cli"
+      New-Item -ItemType Directory -Force $dir | Out-Null
+      Invoke-WebRequest https://downloads.arduino.cc/arduino-cli/arduino-cli_1.5.1_Windows_64bit.zip -OutFile "$dir\arduino-cli.zip"
+      Expand-Archive "$dir\arduino-cli.zip" -DestinationPath $dir -Force
+      [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$dir", "User")
+      $env:Path += ";$dir"
+      arduino-cli version
+
+  The last line must print "arduino-cli  Version: 1.5.1".
+
+5.2  Add ESP32 support and the two libraries (one time, about 5-10 minutes)
+
+      arduino-cli config init
+      arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+      arduino-cli core update-index
+      arduino-cli core install esp32:esp32@3.3.11
+      arduino-cli lib install TinyGPSPlus@1.0.3 ArduinoJson@7.4.3
+
+  If "config init" says the file already exists, that is fine - carry on.
+  These are the exact versions this firmware was tested with.
+
+5.3  Check the laptop sees the ESP32
+  Plug the ESP32 into the laptop with a USB DATA cable, then:
+
+      arduino-cli board list
+
+  You should see a line like "COM3  serial  Serial Port (USB)". Remember
+  that COM number - the commands below use COM3; change it if yours differs.
+
+  Nothing listed? Try another USB cable (many are charge-only) or another
+  port. Still nothing: install the CH340 USB driver from
+  https://www.wch-ic.com/downloads/CH341SER_EXE.html and plug in again.
+
+5.4  Prepare the backend for the tracker (one time)
+  a) Allow the tracker through Windows Firewall. Open PowerShell as
+     Administrator (right-click -> Run as administrator) and run once:
+
+       netsh advfirewall firewall add rule name="ArmoryDB API 8000" dir=in action=allow protocol=TCP localport=8000
+
+  b) The firearm the tracker is attached to must have an ACTIVE or OVERDUE
+     transaction with GPS tracking enabled (issue it on the Transactions
+     page). Otherwise every position is refused and nothing shows on the map.
+
+5.5  Tell the tracker which Wi-Fi and which laptop to use
+  Connect the LAPTOP to the hotspot the tracker will use FIRST, then find
+  the laptop's address on it:
+
+      ipconfig
+
+  Under "Wireless LAN adapter Wi-Fi" note the "IPv4 Address",
+  e.g. 10.46.14.219.
+
+  First time only, create the settings file:
+
+      Copy-Item iot\firmware\armory_tracker\config.example.h iot\firmware\armory_tracker\config.h
+
+  Open it:
+
+      notepad iot\firmware\armory_tracker\config.h
+
+  and set these lines (keep the quotes):
+
+      #define WIFI_SSID "<hotspot name>"
+      #define WIFI_PASS "<hotspot password>"
+      #define SIMULATE_GPS 0
+      #define API_URL "http://<laptop IPv4>:8000/api/v1/gps/ingest"
+      #define USE_HTTPS 0
+      #define HMAC_SECRET "<same value as IOT_HMAC_SECRET in backend\.env>"
+      #define EQUIPMENT_ID 1          <- the firearm's equipment_id
+      #define TX_INTERVAL_MS 5000     <- one position every 5 s
+      #define HAS_STATUS_LEDS 1
+
+  Save and close Notepad.
+
+  Hotspot must be 2.4 GHz (the ESP32 cannot see 5 GHz):
+    iPhone  -> Personal Hotspot -> turn ON "Maximize Compatibility"
+    Android -> Hotspot settings -> AP band -> 2.4 GHz
+
+  The laptop's address can change when it reconnects to the hotspot. Run
+  ipconfig before every demo. If it changed, update API_URL and do 5.6 again.
+
+5.6  Build and copy the firmware onto the ESP32
+  From the project folder (change COM3 if 5.3 showed another port):
+
+      arduino-cli compile --fqbn esp32:esp32:esp32 iot\firmware\armory_tracker
+      arduino-cli upload -p COM3 --fqbn esp32:esp32:esp32 iot\firmware\armory_tracker
+
+  Success ends with "Hash of data verified" and "Hard resetting".
+  If it stops at "Connecting....", hold the BOOT button on the ESP32 until
+  it continues.
+
+5.7  Watch what the tracker is doing (very useful the first time)
+
+      arduino-cli monitor -p COM3 -c baudrate=115200
+
+  Press Ctrl + C to leave the monitor. Normal sequence:
+
+    [wifi] connected  ip=...                          joined the hotspot
+    [gps] no fix yet (satellites in view=0, used=0)  <- sky blocked? move to open sky
+    [gps] no fix yet (satellites in view=8, used=0)  <- locking on, keep it still
+    [gps] 8.48xxxx, 124.65xxxx  sats=7  2026-...Z     a usable position
+    [post] HTTP 200  {"ok":true,...}                  the backend stored it
+
+  Other messages:
+    [gps] fix too weak: used=3 ...   not enough satellites yet - not sent
+    [gps] fix lost: ... s old        signal lost (trees, roof) - the old
+                                     position is NOT sent again as live
+    [wifi] failed                    wrong hotspot name/password, or 5 GHz
+    [post] HTTP 401                  HMAC_SECRET is not IOT_HMAC_SECRET
+    [post] HTTP 409                  firearm has no Active/Overdue transaction
+                                     with GPS tracking on (5.4 b)
+    [post] transport error           laptop not reachable: wrong API_URL,
+                                     laptop on another Wi-Fi, backend stopped,
+                                     or firewall (5.4 a)
+
+5.8  LEDs (no laptop needed)
+    green on ........................ connected to the hotspot
+    blue on ......................... good GPS fix
+    red 1 flash ..................... position accepted by the backend
+    red 3 quick flashes ............. position NOT accepted: rejected by the
+                                      backend, or the laptop could not be reached
+                                      (5.7 shows the exact reason)
+    green only, for minutes ......... Wi-Fi fine, GPS still searching -> open sky
+  The GPS module's own small LED blinks once a second when it has a fix.
+
+5.9  See it live
+  Open http://localhost:3000 -> GPS Tracking (or the Command Dashboard map),
+  signed in as any staff account (Administrator, Command Officer, S4 Officer,
+  Armory Custodian; Personnel accounts cannot see GPS). The badge shows
+  "1 LIVE" and the marker follows the tracker.
+
+5.10 No GPS signal indoors? Test everything else first
+  In config.h set "#define SIMULATE_GPS 1", then do 5.6 again. The tracker
+  sends made-up moving positions instead of reading the GPS module, which
+  proves Wi-Fi, backend, signature, database and map. Set it back to 0 and do
+  5.6 again before the real demo. (These test positions are saved in the
+  database.)
+
+
+--------------------------------------------------------------------------------
+ 6. FIELD DEMO CHECKLIST
+--------------------------------------------------------------------------------
+
+  Day before (indoors, at the desk):
+  [ ] Laptop on the demo hotspot; ipconfig; API_URL in config.h matches
+  [ ] Firmware uploaded (5.6) with SIMULATE_GPS 0 and the demo hotspot's name/password
+  [ ] "arduino-cli monitor" (5.7) shows "[wifi] connected"
+  [ ] Firearm (EQUIPMENT_ID) has an Active/Overdue transaction with GPS on
+  [ ] Laptop power settings: never sleep (a sleeping laptop stops the backend)
+
+  On the field:
+  [ ] Start MySQL, backend (--host 0.0.0.0), frontend (sections 1-3)
+  [ ] Phone hotspot ON (2.4 GHz), phone near the tracker and the laptop
+  [ ] Laptop still on the hotspot - run ipconfig, same IP as API_URL
+  [ ] Tracker powered (USB to laptop, or a power bank), GPS antenna facing
+      open sky: no roof, no trees directly above
+  [ ] Wait 1-3 minutes without moving it: green -> blue -> red flashes
+  [ ] Open GPS Tracking: "1 LIVE", marker at your position (about 3-10 m)
+
+  Power bank tip: some power banks switch off when the current draw is low
+  (this board uses ~100 mA). If it turns off by itself, use the bank's
+  low-current mode or another bank.
+
+
+--------------------------------------------------------------------------------
+ 7. QUICK TROUBLESHOOTING
+--------------------------------------------------------------------------------
+
+  Website "Module not found ..." after a pull ....... cd frontend; npm install
+  Website cannot reach the API ...................... is "php artisan serve" running?
+                                                      NEXT_PUBLIC_API_URL correct?
+  "Account is locked" ............................... wait 30 min, or reset it
+                                                      with "Forgot password?"
+  QR camera: "Browsers only allow camera access" .... open http://localhost:3000
+  Tracker green only ................................ no GPS fix - open sky, wait
+  Tracker red flashes 3x ............................ not accepted - reason in 5.5
+  Map shows old positions only ...................... "0 LIVE" = no device sending;
+                                                      check the tracker's LEDs
+
+================================================================================
