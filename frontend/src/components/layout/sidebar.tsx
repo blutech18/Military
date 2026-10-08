@@ -9,9 +9,9 @@ import {
   BadgeCheck, Bell, ClipboardList, FileText, Fingerprint,
   Home, LogOut, MapPinned, QrCode, Settings, Shield, ShieldAlert, Users, Wrench, X, ChevronLeft, AlertTriangle, Loader2
 } from "lucide-react";
-import { useAuthStore, hasRole } from "@/store/auth";
+import { useAuthStore, hasRole, hasClearance } from "@/store/auth";
 import { useSidebarStore } from "@/store/sidebar";
-import { cn } from "@/lib/utils";
+import { cn, requiredClearance } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { BrandLogo } from "@/components/brand-logo";
 
@@ -60,7 +60,8 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   }, [setIsCollapsed]);
 
   const items = ALL_ITEMS.filter((item) =>
-    item.roles === "*" || hasRole(user, ...item.roles as unknown as string[])
+    (item.roles === "*" || hasRole(user, ...item.roles as unknown as string[])) &&
+    hasClearance(user, requiredClearance(item.href))
   );
 
   async function logout() {

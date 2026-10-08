@@ -103,6 +103,11 @@ export function persistAuth(token: string, user: unknown, ttlMinutes: number | n
   Cookies.set(USER_COOKIE, JSON.stringify(user), opts);
 }
 
+/** Replace the stored profile (e.g. after the server reports a new role or clearance). */
+export function persistUser(user: unknown) {
+  Cookies.set(USER_COOKIE, JSON.stringify(user), { ...authCookieAttributes(), expires: 365 });
+}
+
 export function clearAuth() {
   removeAuthCookies();
 }

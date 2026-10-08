@@ -32,6 +32,29 @@ export default function UsersPage() {
   };
   const [form, setForm] = useState(emptyForm);
 
+  // Each role's minimum and default clearance come from the API (Role::CLEARANCE_POLICY), so the
+  // form and the server always agree. Staff roles need Secret for the Audit Trail and security reports.
+  const policyFor = (roleId: number) => {
+    const role = roles?.find((r: any) => r.role_id === roleId);
+    return role
+      ? { name: role.role_name as string, min: Number(role.min_clearance ?? 1), def: Number(role.default_clearance ?? 1) }
+      : null;
+  };
+  const policy = policyFor(form.role_id);
+  const belowMinimum = !!policy && form.security_clearance < policy.min;
+
+  function changeRole(roleId: number) {
+    const next = policyFor(roleId);
+    setForm((f) => ({
+      ...f,
+      role_id: roleId,
+      // New account: use the role's default. Existing account: only raise it if it is now too low.
+      security_clearance: next
+        ? editing ? Math.max(f.security_clearance, next.min) : next.def
+        : f.security_clearance,
+    }));
+  }
+
   function startEdit(user: any) {
     setForm({
       username: user.username,
@@ -69,7 +92,11 @@ export default function UsersPage() {
       resetForm();
       qc.invalidateQueries({ queryKey: ["users"] });
     },
-    onError: (e: any) => toast.error(e.response?.data?.message ?? "Failed."),
+    onError: (e: any) => {
+      const errors = e.response?.data?.errors as Record<string, string[]> | undefined;
+      const first = errors ? Object.values(errors)[0]?.[0] : undefined;
+      toast.error(first ?? e.response?.data?.message ?? "Failed.");
+    },
   });
 
   const remove = useMutation({
@@ -93,7 +120,7 @@ export default function UsersPage() {
       {showForm && createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={resetForm}>
           <div className="glass rounded-xl p-6 w-full max-w-2xl max-h-[calc(100vh-2rem)] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <form onSubmit={(e) => { e.preventDefault(); save.mutate(); }} className="space-y-4">
+            <form onSubmit={(e) => { e.preventDefault(); if (belowMinimum) { toast.error(`${policy?.name} accounts need ${CLEARANCES[policy?.min ?? 1]} clearance or higher.`); return; } save.mutate(); }} className="space-y-4">
               <div className="flex justify-between items-center mb-2">
                 <p className="section-title">{editing ? `Edit: ${editing.username}` : "Create User"}</p>
                 <button type="button" onClick={resetForm} className="btn-ghost text-xs"><X className="h-3.5 w-3.5" /></button>
@@ -147,17 +174,32 @@ export default function UsersPage() {
                 <div className="grid md:grid-cols-3 gap-3">
                   <div>
                     <label className="text-xs text-steel-400 mb-1 block">Role</label>
-                    <select className="input-field w-full" value={form.role_id} onChange={(e) => setForm({ ...form, role_id: Number(e.target.value) })}>
+                    <select className="input-field w-full" value={form.role_id} onChange={(e) => changeRole(Number(e.target.value))}>
                       {roles?.map((r: any) => <option key={r.role_id} value={r.role_id}>{r.role_name}</option>)}
                     </select>
                   </div>
                   <div>
                     <label className="text-xs text-steel-400 mb-1 block">Security Clearance</label>
-                    <select className="input-field w-full" value={form.security_clearance} onChange={(e) => setForm({ ...form, security_clearance: Number(e.target.value) })}>
-                      <option value={1}>Confidential</option>
-                      <option value={2}>Secret</option>
-                      <option value={3}>Top Secret</option>
+                    <select
+                      className={`input-field w-full ${belowMinimum ? "border-amber-500/70" : ""}`}
+                      value={form.security_clearance}
+                      onChange={(e) => setForm({ ...form, security_clearance: Number(e.target.value) })}
+                      aria-describedby="clearance-hint"
+                    >
+                      {[1, 2, 3].map((level) => (
+                        <option key={level} value={level} disabled={!!policy && level < policy.min}>
+                          {CLEARANCES[level]}
+                          {policy && level < policy.min ? " (below role minimum)" : ""}
+                        </option>
+                      ))}
                     </select>
+                    {policy && (
+                      <p id="clearance-hint" className={`text-[11px] mt-1 leading-snug ${belowMinimum ? "text-amber-300" : "text-steel-500"}`}>
+                        {belowMinimum
+                          ? `Too low: ${policy.name} accounts need ${CLEARANCES[policy.min]} or higher. Choose one before saving.`
+                          : `${policy.name} accounts need at least ${CLEARANCES[policy.min]}.`}
+                      </p>
+                    )}
                   </div>
                   {editing && (
                     <div>

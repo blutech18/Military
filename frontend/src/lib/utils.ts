@@ -50,3 +50,18 @@ export const CLEARANCES: Record<number, string> = {
   2: "Secret",
   3: "Top Secret",
 };
+
+/**
+ * Pages whose API is guarded by a minimum security clearance (backend: `clearance:N` middleware).
+ * Keep in sync with routes/api.php. Pages not listed need no particular clearance.
+ */
+export const ROUTE_CLEARANCE: Record<string, number> = {
+  "/audit": 2,
+};
+
+export function requiredClearance(pathname: string): number {
+  const match = Object.keys(ROUTE_CLEARANCE)
+    .filter((r) => pathname === r || pathname.startsWith(r + "/"))
+    .sort((a, b) => b.length - a.length)[0];
+  return match ? ROUTE_CLEARANCE[match] : 0;
+}

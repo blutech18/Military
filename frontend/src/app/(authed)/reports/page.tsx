@@ -21,9 +21,11 @@ import {
   Search,
   X,
   Check,
+  Lock,
 } from "lucide-react";
 import { TOKEN_COOKIE, api } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, CLEARANCES } from "@/lib/utils";
+import { useAuthStore, hasClearance } from "@/store/auth";
 import Cookies from "js-cookie";
 import { toast } from "sonner";
 
@@ -33,6 +35,8 @@ interface ReportItem {
   description: string;
   badge: string;
   icon: any;
+  /** Minimum security clearance the API requires for this report (backend: clearance:N). */
+  minClearance?: number;
 }
 
 const REPORTS: ReportItem[] = [
@@ -70,6 +74,7 @@ const REPORTS: ReportItem[] = [
     description: "Cryptographically verifiable operational audit log recording all user actions, logins, and overrides.",
     badge: "COMPLIANCE",
     icon: ShieldAlert,
+    minClearance: 2,
   },
   {
     key: "security-incidents",
@@ -77,6 +82,7 @@ const REPORTS: ReportItem[] = [
     description: "Compiled incident log covering failed MFA logins, access denials, and geofence perimeter alerts.",
     badge: "SECURITY",
     icon: AlertTriangle,
+    minClearance: 2,
   },
 ];
 
@@ -281,6 +287,7 @@ export default function ReportsPage() {
 
   // Tracks which action is currently processing, e.g. "inventory-pdf", "inventory-view", "gps-csv"
   const [activeAction, setActiveAction] = useState<string | null>(null);
+  const user = useAuthStore((s) => s.user);
 
   const { data: firearms } = useQuery({
     queryKey: ["all-firearms-report"],
@@ -513,15 +520,36 @@ export default function ReportsPage() {
           const isDownloadingPdf = activeAction === `${r.key}-pdf`;
           const isDownloadingCsv = activeAction === `${r.key}-csv`;
           const isDownloadingXlsx = activeAction === `${r.key}-xlsx`;
+          // The API refuses this report below its clearance (and logs a violation), so lock it here.
+          const locked = !hasClearance(user, r.minClearance ?? 0);
+          const lockTitle = locked ? `Requires ${CLEARANCES[r.minClearance ?? 0]} clearance` : undefined;
 
           return (
-            <div key={r.key} className="glass rounded-xl p-5 flex flex-col justify-between space-y-4 hover:border-olive-500/40 transition-colors">
+            <div
+              key={r.key}
+              className={cn(
+                "glass rounded-xl p-5 flex flex-col justify-between space-y-4 transition-colors",
+                locked ? "opacity-80" : "hover:border-olive-500/40"
+              )}
+            >
               <div className="space-y-2.5">
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                   <Icon className="h-5 w-5 text-olive-300 shrink-0" />
                   <h3 className="text-base font-bold text-olive-50">{r.title}</h3>
+                  {locked && (
+                    <span className="pill pill-warn text-[10px] uppercase tracking-wider flex items-center gap-1 whitespace-nowrap">
+                      <Lock className="h-3 w-3" /> {CLEARANCES[r.minClearance ?? 0]} clearance
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-steel-400 leading-relaxed">{r.description}</p>
+                {locked && (
+                  <p className="text-xs text-amber-300/90 leading-relaxed">
+                    Requires {CLEARANCES[r.minClearance ?? 0]} clearance or higher
+                    {user?.security_clearance ? `; your account has ${CLEARANCES[user.security_clearance]}` : ""}. Ask an
+                    administrator to update it in User Management.
+                  </p>
+                )}
               </div>
 
               {/* Action Buttons: View PDF + Downloads */}
@@ -529,7 +557,8 @@ export default function ReportsPage() {
                 {/* View PDF */}
                 <button
                   onClick={() => viewPdf(r.key, r.title)}
-                  disabled={!!activeAction}
+                  disabled={!!activeAction || locked}
+                  title={lockTitle}
                   className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1.5 min-w-[95px] justify-center"
                 >
                   {isViewing ? (
@@ -548,7 +577,7 @@ export default function ReportsPage() {
                 {/* Download PDF */}
                 <button
                   onClick={() => download(r.key, "pdf", r.title)}
-                  disabled={!!activeAction}
+                  disabled={!!activeAction || locked}
                   className="btn-secondary text-xs px-2.5 py-1.5 flex items-center gap-1 min-w-[65px] justify-center"
                   title="Download PDF document"
                 >
@@ -563,7 +592,7 @@ export default function ReportsPage() {
                 {/* Download CSV */}
                 <button
                   onClick={() => download(r.key, "csv", r.title)}
-                  disabled={!!activeAction}
+                  disabled={!!activeAction || locked}
                   className="btn-secondary text-xs px-2.5 py-1.5 flex items-center gap-1 min-w-[65px] justify-center"
                   title="Download CSV spreadsheet"
                 >
@@ -578,7 +607,7 @@ export default function ReportsPage() {
                 {/* Download Excel */}
                 <button
                   onClick={() => download(r.key, "xlsx", r.title)}
-                  disabled={!!activeAction}
+                  disabled={!!activeAction || locked}
                   className="btn-secondary text-xs px-2.5 py-1.5 flex items-center gap-1 min-w-[65px] justify-center"
                   title="Download Microsoft Excel workbook"
                 >

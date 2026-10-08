@@ -17,7 +17,7 @@ export default function AuditPage() {
     queryFn: async () => (await api.get<string[]>("/audit-logs/actions")).data,
   });
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["audit-logs", action, page],
     queryFn: async () => (await api.get("/audit-logs", { params: { action: action || undefined, page, per_page: 15 } })).data,
   });
@@ -60,7 +60,7 @@ export default function AuditPage() {
               </tr>
             </thead>
             <tbody>
-              {isError && <tr><td colSpan={7} className="py-0"><DataError onRetry={refetch} /></td></tr>}
+              {isError && <tr><td colSpan={7} className="py-0"><DataError error={error} onRetry={refetch} /></td></tr>}
               {isLoading && !isError && <tr><td colSpan={7} className="text-center py-8 text-steel-400">Loading…</td></tr>}
               {!isLoading && data?.data?.length === 0 && (
                 <tr><td colSpan={7} className="text-center py-8 text-steel-500">No audit logs found.</td></tr>

@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
@@ -43,6 +44,8 @@ class UserController extends Controller
             'status'             => ['nullable', 'integer', 'in:0,1'],
         ]);
 
+        $this->assertClearanceFitsRole((int) $data['role_id'], (int) $data['security_clearance']);
+
         $data['password'] = Hash::make($data['password']);
         $data['status']   = $data['status'] ?? User::STATUS_ACTIVE;
 
@@ -73,6 +76,12 @@ class UserController extends Controller
             'password'           => ['sometimes', 'string', 'min:10', 'max:200'],
         ]);
 
+        // Check the combination the account will end up with, whichever of the two changed.
+        $this->assertClearanceFitsRole(
+            (int) ($data['role_id'] ?? $user->role_id),
+            (int) ($data['security_clearance'] ?? $user->security_clearance),
+        );
+
         if (isset($data['password'])) {
             $data['password'] = Hash::make($data['password']);
         }
@@ -96,6 +105,25 @@ class UserController extends Controller
 
         AuditLogger::log('user_delete', "Soft-deleted user {$user->username}", $request->user(), request: $request);
         return response()->json(['message' => 'User archived.']);
+    }
+
+    /**
+     * Refuses a clearance below what the role needs (see Role::CLEARANCE_POLICY).
+     */
+    private function assertClearanceFitsRole(int $roleId, int $clearance): void
+    {
+        $role = Role::find($roleId);
+        if ($role && $clearance < $role->min_clearance) {
+            $labels = [
+                User::CLEARANCE_CONFIDENTIAL => 'Confidential',
+                User::CLEARANCE_SECRET       => 'Secret',
+                User::CLEARANCE_TOP_SECRET   => 'Top Secret',
+            ];
+            throw ValidationException::withMessages([
+                'security_clearance' => "{$role->role_name} accounts need at least {$labels[$role->min_clearance]} clearance: "
+                    . 'the role includes the Audit Trail and security reports.',
+            ]);
+        }
     }
 
     public function roles(): JsonResponse

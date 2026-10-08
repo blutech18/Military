@@ -1,11 +1,12 @@
 import { create } from "zustand";
-import { persistAuth, clearAuth, readAuth, AuthUser } from "@/lib/api";
+import { persistAuth, persistUser, clearAuth, readAuth, AuthUser } from "@/lib/api";
 
 interface AuthState {
   user: AuthUser | null;
   token: string | null;
   loaded: boolean;
   setSession(token: string, user: AuthUser, ttl?: number | null): void;
+  updateUser(user: AuthUser): void;
   clear(): void;
   hydrate(): void;
 }
@@ -25,6 +26,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ token, user });
   },
 
+  updateUser(user) {
+    persistUser(user);
+    set({ user });
+  },
+
   clear() {
     clearAuth();
     set({ token: null, user: null });
@@ -33,4 +39,8 @@ export const useAuthStore = create<AuthState>((set) => ({
 
 export function hasRole(user: AuthUser | null, ...roles: string[]) {
   return user ? roles.includes(user.role ?? "") : false;
+}
+
+export function hasClearance(user: AuthUser | null, level: number) {
+  return level <= 0 || (!!user && Number(user.security_clearance ?? 0) >= level);
 }

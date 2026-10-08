@@ -13,7 +13,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
           queries: {
             staleTime: 30_000,
             refetchOnWindowFocus: false,
-            retry: 1,
+            // Retry network glitches and 5xx once. A 4xx (no permission, not found, invalid
+            // input) will not change on a retry; repeating a 403 also logs extra security
+            // violations on the server.
+            retry: (failureCount, error) => {
+              const status = (error as { response?: { status?: number } })?.response?.status;
+              if (status && status >= 400 && status < 500) return false;
+              return failureCount < 1;
+            },
           },
         },
       })
