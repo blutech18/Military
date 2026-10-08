@@ -276,13 +276,13 @@ from the project folder.
 
   The last line must print "arduino-cli  Version: 1.5.1".
 
-5.2  Add ESP32 support and the two libraries (one time, about 5-10 minutes)
+5.2  Add ESP32 support and the libraries (one time, about 5-10 minutes)
 
       arduino-cli config init
       arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
       arduino-cli core update-index
       arduino-cli core install esp32:esp32@3.3.11
-      arduino-cli lib install TinyGPSPlus@1.0.3 ArduinoJson@7.4.3
+      arduino-cli lib install TinyGPSPlus@1.0.3 ArduinoJson@7.4.3 WiFiManager@2.0.17
 
   If "config init" says the file already exists, that is fine - carry on.
   These are the exact versions this firmware was tested with.
@@ -310,6 +310,10 @@ from the project folder.
      page). Otherwise every position is refused and nothing shows on the map.
 
 5.5  Tell the tracker which Wi-Fi and which laptop to use
+  config.h is needed once for the first upload (it holds the secret and the
+  firearm). After that, the Wi-Fi and the laptop address are easiest to
+  change from a phone - see 5.11.
+
   Connect the LAPTOP to the hotspot the tracker will use FIRST, then find
   the laptop's address on it:
 
@@ -363,7 +367,7 @@ from the project folder.
 
   Press Ctrl + C to leave the monitor. Normal sequence:
 
-    [wifi] connected  ip=...                          joined the hotspot
+    [wifi] connected  ip=...  channel 1 (2.4 GHz)    joined the hotspot (always 2.4 GHz)
     [gps] no fix yet (satellites in view=0, used=0)  <- sky blocked? move to open sky
     [gps] no fix yet (satellites in view=8, used=0)  <- locking on, keep it still
     [gps] 8.48xxxx, 124.65xxxx  sats=7  2026-...Z     a usable position
@@ -389,6 +393,7 @@ from the project folder.
                                       backend, or the laptop could not be reached
                                       (5.7 shows the exact reason)
     green only, for minutes ......... Wi-Fi fine, GPS still searching -> open sky
+    green blinking fast ............. setup mode open - set it up from a phone (5.11)
   The GPS module's own small LED blinks once a second when it has a fix.
 
 5.9  See it live
@@ -405,20 +410,51 @@ from the project folder.
   database.)
 
 
+5.11 Change the Wi-Fi or the laptop address from a phone (no laptop, no USB)
+  The tracker stores its Wi-Fi and the laptop's address on the board. Change
+  them any time from a phone - handy at the demo site.
+
+  1. Open setup mode. Either:
+       - hold the BOOT button on the ESP32 for 3 seconds, or
+       - just power it on: if it cannot join its saved Wi-Fi it opens setup
+         mode by itself.
+     The GREEN LED blinks fast while setup mode is open (3 minutes).
+  2. On the phone: Settings -> Wi-Fi -> join  ArmoryTracker-ESP32-001
+     password:  armory-setup
+     A setup page opens by itself (if not, open a browser at 192.168.4.1).
+  3. Tap "Set up Wi-Fi and laptop address". Under "Networks in range" tap
+     the hotspot, type its password, and under "Laptop running the system"
+     type the laptop's IPv4 address from ipconfig (e.g. 10.46.14.219).
+     Press Save. ("Currently saved on the tracker" shows what it uses now.)
+  4. IMPORTANT: turn the phone's Wi-Fi OFF afterwards and keep its hotspot
+     ON. Otherwise the phone rejoins your home Wi-Fi by itself, and a hotspot
+     that shares a 5 GHz Wi-Fi switches to 5 GHz - the ESP32 cannot see 5 GHz.
+     (iPhone: the hotspot pauses while the phone is on the setup Wi-Fi; turn
+     it back on after Save.)
+  5. Within about 30 seconds the GREEN LED stays on: connected.
+
+  If the hotspot password was typed wrong, it simply cannot connect - hold
+  BOOT 3 s and enter it again. Settings entered on the phone replace the
+  Wi-Fi and address in config.h until they are changed on the phone again.
+
+
 --------------------------------------------------------------------------------
  6. FIELD DEMO CHECKLIST
 --------------------------------------------------------------------------------
 
   Day before (indoors, at the desk):
   [ ] Laptop on the demo hotspot; ipconfig; API_URL in config.h matches
-  [ ] Firmware uploaded (5.6) with SIMULATE_GPS 0 and the demo hotspot's name/password
+  [ ] Firmware uploaded (5.6) with SIMULATE_GPS 0
+  [ ] Tracker set to the demo hotspot and the laptop's IP (5.11, from a phone)
   [ ] "arduino-cli monitor" (5.7) shows "[wifi] connected"
   [ ] Firearm (EQUIPMENT_ID) has an Active/Overdue transaction with GPS on
   [ ] Laptop power settings: never sleep (a sleeping laptop stops the backend)
 
   On the field:
   [ ] Start MySQL, backend (--host 0.0.0.0), frontend (sections 1-3)
-  [ ] Phone hotspot ON (2.4 GHz), phone near the tracker and the laptop
+  [ ] Phone hotspot ON (2.4 GHz) and the phone's own Wi-Fi OFF,
+      phone near the tracker and the laptop
+  [ ] Laptop IP changed? Update it from a phone (5.11) - no reflash needed
   [ ] Laptop still on the hotspot - run ipconfig, same IP as API_URL
   [ ] Tracker powered (USB to laptop, or a power bank), GPS antenna facing
       open sky: no roof, no trees directly above
@@ -441,6 +477,9 @@ from the project folder.
                                                       with "Forgot password?"
   QR camera: "Browsers only allow camera access" .... open http://localhost:3000
   Tracker green only ................................ no GPS fix - open sky, wait
+  Tracker never turns green ......................... hotspot off or on 5 GHz: turn the
+                                                      phone's own Wi-Fi OFF; else 5.11
+  Wrong hotspot or laptop address on the tracker .... hold BOOT 3 s, fix it (5.11)
   Tracker red flashes 3x ............................ not accepted - reason in 5.5
   Map shows old positions only ...................... "0 LIVE" = no device sending;
                                                       check the tracker's LEDs

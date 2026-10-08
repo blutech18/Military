@@ -1,0 +1,94 @@
+ArmoryDB theme for the tracker's phone setup pages (readable source of SETUP_PAGE_THEME).
+After editing, regenerate the C string in armory_tracker.ino.
+
+== CSS ==
+html,body{background:#14171c}
+body{margin:0;padding:16px;min-height:100vh;box-sizing:border-box;color:#e2e7e9;text-align:left;
+ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+ background-image:linear-gradient(rgba(174,183,113,.05) 1px,transparent 1px),
+ linear-gradient(90deg,rgba(174,183,113,.05) 1px,transparent 1px),
+ radial-gradient(ellipse at top,rgba(86,99,53,.28),transparent 60%);
+ background-size:32px 32px,32px 32px,100% 100%;background-attachment:fixed}
+.wrap{display:block;max-width:440px;min-width:0;margin:0 auto;padding:20px 18px 16px;
+ background:rgba(31,42,50,.72);border:1px solid rgba(69,77,34,.55);border-radius:12px;
+ box-shadow:0 8px 32px rgba(0,0,0,.45)}
+.armory-brand{display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:11px;font-weight:600;
+ letter-spacing:.18em;text-transform:uppercase;color:#aeb771}
+.armory-dot{width:8px;height:8px;border-radius:50%;background:#909a4d;box-shadow:0 0 8px rgba(144,154,77,.8)}
+h1{margin:0;font-size:20px;line-height:1.25;font-weight:700;color:#f5f6ee}
+h3{margin:4px 0 14px;font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#677a83}
+label{display:block;margin:14px 0 6px;font-size:11px;font-weight:600;letter-spacing:.14em;
+ text-transform:uppercase;color:#aeb771}
+#showpass{width:auto;margin:12px 8px 0 0;vertical-align:middle;accent-color:#75803a}
+label[for=showpass]{display:inline;margin:0;font-size:13px;font-weight:500;letter-spacing:0;text-transform:none;color:#94a4ab}
+.wrap>br,.wrap form>br{display:none}
+form[action='wifisave'] button[type=submit]{margin-top:20px}
+input:not([type=checkbox]):not([type=radio]){width:100%;margin:0;padding:11px 12px;font-size:16px;color:#e2e7e9;
+ background:rgba(23,31,37,.85);border:1px solid rgba(69,77,34,.45);border-radius:6px;outline:none}
+input::placeholder{color:#677a83}
+input:focus{border-color:rgba(117,128,58,.9);box-shadow:0 0 0 2px rgba(117,128,58,.45)}
+input:disabled{opacity:.55}
+button,input[type=submit]{display:block;width:100%;margin:6px 0;padding:0 14px;line-height:2.75rem;
+ font-size:15px;font-weight:600;letter-spacing:.02em;color:#f5f6ee;background:#5b652b;border:0;border-radius:6px}
+button:active{background:#454d22}
+button[name=refresh],form[action='/exit'] button{background:#2a3741;color:#e2e7e9}
+form[action='/exit'] button{border:1px solid rgba(103,122,131,.35)}
+a{color:#e6e9d2;font-weight:600;text-decoration:none}
+hr{border:0;border-top:1px solid rgba(69,77,34,.45);margin:18px 0 4px}
+.armory-net{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0;padding:11px 12px;
+ background:rgba(23,31,37,.75);border:1px solid rgba(69,77,34,.35);border-radius:8px}
+.armory-net a{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.armory-net .q{float:none;padding:0;margin:0;min-width:0;filter:invert(.85) sepia(.35) hue-rotate(25deg)}
+.msg{margin:14px 0;padding:12px 14px;color:#e2e7e9;background:rgba(23,31,37,.75);
+ border:1px solid rgba(69,77,34,.35);border-left:4px solid #909a4d;border-radius:8px}
+.msg.S{border-left-color:#15803d}.msg.D{border-left-color:#c0392b}
+.armory-note{margin:0 0 14px;padding:11px 13px;font-size:14px;line-height:1.45;color:#fcd9a8;
+ background:rgba(217,119,6,.12);border:1px solid rgba(217,119,6,.45);border-radius:8px}
+.armory-note b{color:#fde7c4}
+h1+.armory-note{margin-top:14px}
+.armory-hint{margin:6px 0 0;font-size:12px;color:#94a4ab}
+.armory-hint b{color:#e6e9d2}
+.armory-section{margin:18px 0 2px;font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:#aeb771}
+.armory-foot{margin:16px 0 0;text-align:center;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#4d5e67}
+br{line-height:.4}
+
+== JavaScript ==
+document.addEventListener('DOMContentLoaded',function(){
+var w=document.querySelector('.wrap')||document.body,p=location.pathname,saved=p.indexOf('wifisave')>=0;
+var h=document.querySelector('h1');
+if(h){var b=document.createElement('div');b.className='armory-brand';
+ b.innerHTML='<span class=armory-dot></span>ArmoryDB \u00b7 GPS tracker setup';h.parentNode.insertBefore(b,h);}
+var n=document.createElement('div');n.className='armory-note';
+n.innerHTML=saved?'<b>Saved.</b> Now turn <b>OFF Wi-Fi on this phone</b> and keep its <b>Hotspot ON</b>. The tracker connects within about 30 seconds (green LED stays on).'
+:'<b>After you press Save:</b> turn <b>OFF Wi-Fi on this phone</b> and keep its <b>Hotspot ON</b>. Otherwise the phone rejoins your home Wi-Fi and the hotspot may switch to 5 GHz, which the tracker cannot use.';
+var anchor=document.querySelector('h3')||h;
+if(anchor)anchor.parentNode.insertBefore(n,anchor.nextSibling);else w.insertBefore(n,w.firstChild);
+var rows=document.querySelectorAll('a[onclick]');
+if(rows.length){var t=document.createElement('div');t.className='armory-section';t.textContent='Networks in range - tap one';
+ rows[0].parentNode.parentNode.insertBefore(t,rows[0].parentNode);}
+for(var i=0;i<rows.length;i++)rows[i].parentNode.className='armory-net';
+var s=document.getElementById('s');
+if(s){var cur=s.getAttribute('placeholder')||'';s.setAttribute('placeholder','Tap a network above, or type its name');
+ var ls=document.querySelector('label[for=s]');if(ls)ls.textContent='Wi-Fi name (hotspot)';
+ if(cur){var hs=document.createElement('div');hs.className='armory-hint';hs.innerHTML='Currently saved on the tracker: <b></b>';
+  hs.querySelector('b').textContent=cur;s.parentNode.insertBefore(hs,s.nextSibling);}}
+var lp=document.querySelector('label[for=p]');if(lp)lp.textContent='Wi-Fi password';
+var pw=document.getElementById('p');if(pw)pw.setAttribute('placeholder','Hotspot password');
+var sv=document.getElementById('server');
+if(sv){var lsv=document.querySelector('label[for=server]');if(lsv)lsv.textContent='IP address';
+ sv.setAttribute('placeholder','e.g. 10.46.14.219');var hr=document.querySelector('hr');if(hr){var st=document.createElement('div');st.className='armory-section';
+ st.textContent='Laptop running the system';hr.parentNode.insertBefore(st,hr.nextSibling);}
+ var hi=document.createElement('div');hi.className='armory-hint';
+ hi.innerHTML='Type the laptop\u2019s IPv4 address from <b>ipconfig</b> while it is on the same hotspot.';
+ sv.parentNode.insertBefore(hi,sv.nextSibling);}
+var bs=document.querySelectorAll('button');
+var names={'Configure WiFi':'Set up Wi-Fi and laptop address','Exit':'Exit setup','Refresh':'Scan again'};
+for(var j=0;j<bs.length;j++){var k=bs[j].textContent.trim();if(names[k])bs[j].textContent=names[k];}
+var reasons={'AP not found':'Hotspot not found - it is off, or on 5 GHz.','Authentication failure':'Wrong hotspot password.',
+ 'Could not connect':'Could not connect - check the hotspot.','No AP set':'No Wi-Fi saved yet.',
+ 'Saving Credentials':'<b>Settings saved on the tracker.</b>','Trying to connect ESP to network.':'It is now connecting to the hotspot.',
+ 'If it fails reconnect to AP to try again':'If the green LED does not stay on, hold BOOT for 3 seconds and set it up again.'};
+var ms=document.querySelectorAll('.msg');
+for(var r=0;r<ms.length;r++){for(var key in reasons){ms[r].innerHTML=ms[r].innerHTML.split(key).join(reasons[key]);}}
+var f=document.createElement('div');f.className='armory-foot';f.textContent='Authorized personnel only';w.appendChild(f);
+});

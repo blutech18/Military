@@ -14,6 +14,17 @@
 #define WIFI_SSID "YourWiFiName"
 #define WIFI_PASS "YourWiFiPassword"
 
+/* Phone setup mode (optional; the firmware uses these defaults).
+ * Hold BOOT 3 s - or power on where the saved Wi-Fi is not available - and the tracker opens
+ * the Wi-Fi SETUP_AP_NAME. Join it from a phone, pick the hotspot, type its password and the
+ * laptop's IP; it is saved on the board and replaces WIFI_SSID / WIFI_PASS / API_URL here.
+ *   #define SETUP_AP_NAME "ArmoryTracker-" DEVICE_ID
+ *   #define SETUP_AP_PASSWORD "armory-setup"   8+ characters
+ *   #define SETUP_HOLD_MS 3000
+ *   #define SETUP_PORTAL_TIMEOUT_S 180
+ *   #define API_PORT 8000                      added when only an IP is typed
+ */
+
 /* 0 = scan for the network. A fixed channel skips the scan and saves about
  * 4 seconds; Wokwi's virtual access point is always on channel 6. */
 #define WIFI_CHANNEL 0
@@ -125,6 +136,7 @@
  *   TX   : 1 flash = fix accepted, 3 flashes = rejected
  */
 #define HAS_STATUS_LEDS 0
+/* With LEDs: WIFI blinking fast = phone setup mode is open (see below). */
 #define LED_WIFI_PIN 25
 #define LED_FIX_PIN 26
 #define LED_TX_PIN 33
