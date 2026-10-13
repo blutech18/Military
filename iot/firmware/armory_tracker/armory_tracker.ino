@@ -78,8 +78,17 @@
 TinyGPSPlus gps;
 HardwareSerial GPSSerial(2); /* UART2 */
 /* Satellites the receiver can see (GSV), as opposed to the ones used in the fix (GGA).
- * In the field this tells "blocked sky" (few in view) from "still locking" (many in view). */
-TinyGPSCustom satsInView(gps, "GPGSV", 3);
+ * In the field this tells "blocked sky" (few in view) from "still locking" (many in view).
+ * A NEO-6M only reports GPS (GP); a NEO-M8N also reports GLONASS (GL), Galileo (GA) and
+ * BeiDou (GB / BD), one GSV group per system, so the count adds them up. */
+TinyGPSCustom satsInViewGps(gps, "GPGSV", 3);
+TinyGPSCustom satsInViewGlonass(gps, "GLGSV", 3);
+TinyGPSCustom satsInViewGalileo(gps, "GAGSV", 3);
+TinyGPSCustom satsInViewBeidou(gps, "GBGSV", 3);
+TinyGPSCustom satsInViewBeidouOld(gps, "BDGSV", 3);
+/* Characters / valid sentences from the GPS at the last check: no growth = nothing on the wire. */
+unsigned long lastGpsChars = 0;
+unsigned long lastGpsSentences = 0;
 
 unsigned long lastTxMs = 0;
 Preferences prefs;  /* namespace "armory": api_url, wifi_from_phone, setup_next */
@@ -101,6 +110,7 @@ enum SendResult { SEND_OK, SEND_RETRY, SEND_DROP };
 /* FIX_STALE: TinyGPSPlus keeps the last position "valid" after the signal is lost while the
  * clock keeps ticking, so without an age check a frozen position would be posted as live. */
 enum FixState { FIX_NONE, FIX_STALE, FIX_WEAK, FIX_GOOD };
+enum GpsLink { GPS_LINK_OK, GPS_LINK_SILENT, GPS_LINK_GARBLED };
 
 /* Short-lived queue for fixes taken while the link was down.
  * Kept in RAM only: the API discards anything older than its freshness
@@ -248,8 +258,35 @@ bool gpsEpoch(time_t* out) {
   return true;
 }
 
+/* Hands every byte waiting on the GPS UART to the parser. Call it from any long wait too. */
+void feedGps() {
+#if !SIMULATE_GPS
+  while (GPSSerial.available()) gps.encode(GPSSerial.read());
+#endif
+}
+
 unsigned long satellitesUsed() { return gps.satellites.isValid() ? gps.satellites.value() : 0UL; }
-unsigned long satellitesInView() { return satsInView.isValid() ? strtoul(satsInView.value(), nullptr, 10) : 0UL; }
+unsigned long gsvCount(TinyGPSCustom &field) {
+  /* A system that stopped reporting (out of view) must not keep its old count. */
+  return field.isValid() && field.age() < 5000 ? strtoul(field.value(), nullptr, 10) : 0UL;
+}
+unsigned long satellitesInView() {
+  return gsvCount(satsInViewGps) + gsvCount(satsInViewGlonass) + gsvCount(satsInViewGalileo) +
+         gsvCount(satsInViewBeidou) + gsvCount(satsInViewBeidouOld);
+}
+
+/* What came over the GPS wire since the last call. Silence means a loose TX/GND wire or an
+ * unsoldered header pin: the module sends every second even indoors, satellites or not. */
+GpsLink gpsLinkSinceLastCheck() {
+  const unsigned long chars = gps.charsProcessed();
+  const unsigned long sentences = gps.passedChecksum();
+  GpsLink link = GPS_LINK_OK;
+  if (chars == lastGpsChars) link = GPS_LINK_SILENT;
+  else if (sentences == lastGpsSentences) link = GPS_LINK_GARBLED; /* bytes, but none valid */
+  lastGpsChars = chars;
+  lastGpsSentences = sentences;
+  return link;
+}
 double currentHdop() { return gps.hdop.isValid() ? gps.hdop.hdop() : 99.99; }
 
 FixState currentFix() {
@@ -328,6 +365,7 @@ bool joinWifi() {
   unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < 20000) {
     checkSetupButton();
+    feedGps(); /* a rejoin can take 20 s: keep reading the GPS so no sentences are dropped */
     delay(250);
     Serial.print(".");
   }
@@ -685,6 +723,10 @@ void setup() {
                 (double) SIM_START_LAT, (double) SIM_START_LON, (double) SIM_STEP_METERS);
   randomSeed(micros());
 #else
+  /* The default 256-byte receive buffer holds well under a second of NEO-M8N output (~400-800
+   * bytes/s with GPS + GLONASS). Sending a position or rejoining Wi-Fi blocks loop() for longer,
+   * so the buffer overflowed and sentences were cut. 2 KB covers several seconds. Must precede begin(). */
+  GPSSerial.setRxBufferSize(2048);
   GPSSerial.begin(GPS_BAUD, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
   Serial.printf("[gps] UART2 rx=%d tx=%d @%d baud\n", GPS_RX_PIN, GPS_TX_PIN, GPS_BAUD);
 #endif
@@ -753,7 +795,7 @@ void loop() {
     }
   }
 #else
-  while (GPSSerial.available()) gps.encode(GPSSerial.read());
+  feedGps();
 #endif
 
   if (WiFi.status() != WL_CONNECTED && millis() - lastWifiRetryMs > 15000) {
@@ -794,6 +836,21 @@ void loop() {
       Serial.println("[gps] waiting for NTP before the first simulated fix");
 #if HAS_LCD
       lcdStatus("Waiting for NTP", "no fix yet");
+#endif
+      return;
+    }
+#endif
+#if !SIMULATE_GPS
+    const GpsLink link = gpsLinkSinceLastCheck();
+    if (link != GPS_LINK_OK) {
+      if (link == GPS_LINK_SILENT) {
+        Serial.println("[gps] NO DATA from the GPS module <- check GPS TX -> D18 and GND; header pins must be "
+                       "soldered (this is a wire problem, not the sky)");
+      } else {
+        Serial.printf("[gps] GARBLED data from the GPS module <- wrong speed? GPS_BAUD is %d\n", GPS_BAUD);
+      }
+#if HAS_LCD
+      lcdStatus(link == GPS_LINK_SILENT ? "GPS: NO DATA" : "GPS: BAD DATA", "check TX->D18");
 #endif
       return;
     }

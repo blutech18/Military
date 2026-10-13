@@ -172,7 +172,7 @@ function Write-TrackerConfig([string]$Ssid, [string]$Password, [string]$Ip, [int
 # ================================================================ live status in the terminal
 
 function Get-LineColor([string]$Line) {
-    if ($Line -match 'failed|HTTP [45]\d\d|transport error|rejected|Guru|panic|abort|Backtrace|not found') { return 'Red' }
+    if ($Line -match 'failed|HTTP [45]\d\d|transport error|rejected|Guru|panic|abort|Backtrace|not found|NO DATA|GARBLED') { return 'Red' }
     if ($Line -match 'HTTP 2\d\d|\[wifi\] connected|\[gps\] -?\d+\.\d+') { return 'Green' }
     if ($Line -match 'no fix yet|fix lost|fix too weak|waiting for a GPS fix|reconnecting|link down') { return 'Yellow' }
     if ($Line -match '\[setup\]|\*wm:') { return 'Cyan' }
