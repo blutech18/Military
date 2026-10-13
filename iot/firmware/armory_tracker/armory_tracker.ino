@@ -10,8 +10,7 @@
  *   3. Serial Monitor at 115200 baud.
  *
  * No hardware? Set SIMULATE_GPS 1 in config.h. The firmware then synthesises NMEA
- * internally instead of reading the UART, which is also the only way to run this in
- * Wokwi (it has no NEO-6M part). See diagram.json and iot/README.md section 10.
+ * internally instead of reading the UART, to test Wi-Fi, signing and the map on the bench.
  *
  * Server contract enforced by the API (see GpsController::ingest):
  *   - Body must be signed with IOT_HMAC_SECRET, hex, in X-Armory-Signature.
@@ -133,7 +132,7 @@ LiquidCrystal_I2C lcd(LCD_I2C_ADDR, 16, 2);
 #endif
 
 #if SIMULATE_GPS
-/* ---------------- simulated GPS (Wokwi / no hardware) ----------------
+/* ---------------- simulated GPS (no hardware) ----------------
  * Synthesises standard NMEA sentences and pushes them through TinyGPSPlus,
  * so every downstream code path behaves exactly as it does with a real module.
  */
@@ -354,7 +353,7 @@ bool joinWifi() {
   } else {
     ssid = WIFI_SSID;
 #if WIFI_CHANNEL > 0
-    /* Naming the channel skips the scan phase (Wokwi's AP is on channel 6). */
+    /* Naming the channel skips the scan phase. */
     WiFi.begin(WIFI_SSID, WIFI_PASS, WIFI_CHANNEL);
 #else
     WiFi.begin(WIFI_SSID, WIFI_PASS);

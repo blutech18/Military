@@ -245,7 +245,7 @@ U.are.U fingerprint reader. It needs two things installed once:
 
 
 --------------------------------------------------------------------------------
- 5. GPS TRACKER (ESP32 + GY-NEO6MV2)
+ 5. GPS TRACKER (ESP32 + GPS module: GY-NEO6MV2 or NEO-M8N)
 --------------------------------------------------------------------------------
 
 How it works:
@@ -257,6 +257,10 @@ How it works:
 Wiring (already done on the demo unit):
     GPS VCC -> ESP32 3V3        GPS TX -> ESP32 D18
     GPS GND -> ESP32 GND        GPS RX -> ESP32 D19
+    Same wires for the NEO-6M and the NEO-M8N; go by the labels printed
+    next to the GPS pins (the order differs between boards). The GPS
+    header pins must be SOLDERED, with no solder joining two pins:
+    loose pins light the GPS LED but its data never reaches the ESP32.
     LEDs: green D4 = Wi-Fi, blue D21 = GPS fix, red D22 = send result
           (each: pin -> 220-330 ohm resistor -> LED long leg; short leg -> GND)
 
@@ -374,6 +378,9 @@ from the project folder.
     [post] HTTP 200  {"ok":true,...}                  the backend stored it
 
   Other messages:
+    [gps] NO DATA from the GPS ...   WIRING, not the sky: check GPS TX -> D18
+                                     and GND, and that the GPS pins are
+                                     soldered (no solder joining two pins)
     [gps] fix too weak: used=3 ...   not enough satellites yet - not sent
     [gps] fix lost: ... s old        signal lost (trees, roof) - the old
                                      position is NOT sent again as live
@@ -476,6 +483,8 @@ from the project folder.
   "Account is locked" ............................... wait 30 min, or reset it
                                                       with "Forgot password?"
   QR camera: "Browsers only allow camera access" .... open http://localhost:3000
+  Tracker says "[gps] NO DATA" ...................... GPS wiring: TX -> D18, GND, and
+                                                      the GPS pins soldered
   Tracker green only ................................ no GPS fix - open sky, wait
   Tracker never turns green ......................... hotspot off or on 5 GHz: turn the
                                                       phone's own Wi-Fi OFF; else 5.11

@@ -1,4 +1,4 @@
-# IoT Tracker — ESP32 + GY-NEO6MV2
+# IoT Tracker — ESP32 + GPS (GY-NEO6MV2 or NEO-M8N)
 
 GPS tracker that posts HMAC-signed coordinates to `POST /api/v1/gps/ingest`.
 
@@ -13,15 +13,15 @@ GPS tracker that posts HMAC-signed coordinates to `POST /api/v1/gps/ingest`.
 
 | # | Component | Links to | Via |
 |---|---|---|---|
-| 1 | GPS satellites | GY-NEO6MV2 antenna | 1575.42 MHz radio |
-| 2 | GY-NEO6MV2 | ESP32 | UART serial, 9600 baud |
+| 1 | GPS satellites | GPS module antenna | 1575.42 MHz radio |
+| 2 | GPS module (NEO-6M / NEO-M8N) | ESP32 | UART2 serial on D18/D19, 9600 baud |
 | 3 | ESP32 | Wi-Fi access point | 2.4 GHz Wi-Fi |
 | 4 | ESP32 | Laravel API | HTTP(S) POST, HMAC-SHA256 signed |
 | 5 | Laravel API | `gps_logs` table | Eloquent, inside a DB transaction |
 | 6 | Laravel API | Next.js live map | `GET /api/v1/gps/live` + SSE |
 
 ```
-[satellites] --radio--> [GY-NEO6MV2] --UART--> [ESP32] --WiFi--> [Laravel] --> [DB] --> [dashboard]
+[satellites] --radio--> [GPS module] --UART--> [ESP32] --WiFi--> [Laravel] --> [DB] --> [dashboard]
 ```
 
 Only link 2 is physical wiring. Everything after it is configuration.
@@ -32,29 +32,44 @@ Only link 2 is physical wiring. Everything after it is configuration.
 
 Power the ESP32 from USB only while wiring. Never wire with a battery attached.
 
-| ESP32 pin | GY-NEO6MV2 pin | Wire |
+The same four wires work for a **GY-NEO6MV2 (NEO-6M)** and a **NEO-M8N** board. Go by the
+labels printed next to the GPS pins: the pin order differs between boards.
+
+| ESP32 pin | GPS pin | Wire |
 |---|---|---|
 | `3V3` | `VCC` | red |
 | `GND` | `GND` | black |
-| `GPIO16` (RX2) | `TX` | yellow |
-| `GPIO17` (TX2) | `RX` | orange |
+| `D18` (GPIO18) | `TX` | yellow |
+| `D19` (GPIO19) | `RX` | orange |
 
 ```
-   ESP32                      GY-NEO6MV2
+   ESP32                      GPS (NEO-6M / NEO-M8N)
  ┌─────────┐                 ┌────────────┐
  │ 3V3   ●─┼─────────────────┼─● VCC      │
  │ GND   ●─┼─────────────────┼─● GND      │
- │ GPIO16●─┼─────────────────┼─● TX       │   <- crossover
- │ GPIO17●─┼─────────────────┼─● RX       │   <- crossover
+ │ D18   ●─┼─────────────────┼─● TX       │   <- crossover
+ │ D19   ●─┼─────────────────┼─● RX       │   <- crossover
  │  [USB]  │                 │ [antenna]  │
  └─────────┘                 └────────────┘
 ```
 
-Three things that break this step:
+The ESP32-WROOM-32 board used here has no GPIO16/17 header pins, so the GPS is on D18/D19
+(`GPS_RX_PIN 18`, `GPS_TX_PIN 19` in `config.h`).
 
-- **TX/RX must cross.** GPS `TX` goes to ESP32 **RX** (GPIO16). Straight-through wiring gives no data.
-- **Use `3V3`, not `5V`.** The GY-NEO6MV2 regulator accepts both, but 3V3 keeps the UART levels safe.
-- **The ceramic antenna must face the sky.** No metal above it. GPS does not work indoors.
+Things that break this step:
+
+- **The GPS header pins must be soldered.** These modules ship with the pin strip loose.
+  Unsoldered pins touch only by chance: the power LED lights, but the data (TX) drops out.
+  Keep each joint a small shiny cone and make sure no solder joins two pins.
+- **Do not push the GPS board's pins into the breadboard** in one row: the breadboard joins them.
+- **TX/RX must cross.** GPS `TX` goes to ESP32 **RX** (D18). Straight-through wiring gives no data.
+- **Use `3V3`.** The board's regulator accepts 3.3–5 V and its UART is 3.3 V either way.
+- **The antenna must face the sky** (flat ceramic side up), with its small round plug clicked
+  fully onto the board. No metal above it. GPS does not get a fix indoors.
+
+The tracker's Serial Monitor tells a wiring fault from the sky:
+`[gps] NO DATA from the GPS module` = a wire or solder joint (TX → D18, GND);
+`[gps] no fix yet (satellites in view=N ...)` = wiring is fine, it needs open sky.
 
 Optional battery monitor (only if you set `HAS_BATTERY_MONITOR 1`):
 
@@ -136,8 +151,9 @@ Skipping this returns `409` even when the wiring and signature are perfect.
 Take the device outdoors and watch Serial Monitor:
 
 ```
-[wifi] connected  ip=192.168.1.50  rssi=-52 dBm
-[gps] no fix yet (satellites=0)
+[gps] UART2 rx=18 tx=19 @9600 baud
+[wifi] connected  ip=192.168.1.50  rssi=-52 dBm  channel 11 (2.4 GHz)
+[gps] no fix yet (satellites in view=13, used=3)  <- locking on, keep it still
 [gps] 8.484512, 124.657089  sats=8  2026-09-13T04:21:30Z
 [post] HTTP 200  {"ok":true,"gps_log_id":15,"inside_geofence":true,"inside_armory":false}
 ```
@@ -205,118 +221,7 @@ payloads too stale to be accepted.
 
 ---
 
-## 10. Run it in Wokwi (no hardware at all)
-
-[Wokwi](https://wokwi.com/projects/new/esp32) runs the real firmware in a browser.
-`diagram.json` and `libraries.txt` in the sketch folder are for this; the Arduino IDE
-ignores both.
-
-Wokwi has no NEO-6M part, so set `SIMULATE_GPS 1` in `config.h`. The firmware then
-builds NMEA sentences in code and feeds them through TinyGPSPlus, keeping the parsing,
-signing, and HTTP paths identical to the hardware build.
-
-Wokwi settings in `config.h`:
-
-```cpp
-#define WIFI_SSID "Wokwi-GUEST"
-#define WIFI_PASS ""
-#define WIFI_CHANNEL 6
-#define SIMULATE_GPS 1
-```
-
-Then pick how the simulator reaches your API:
-
-| Your situation | `API_URL` | Notes |
-|---|---|---|
-| Paid Wokwi + Private Gateway running | `http://host.wokwi.internal:8000/api/v1/gps/ingest` | Closest match to real hardware |
-| Free Wokwi | public tunnel URL (ngrok / Cloudflare) with `USE_HTTPS 1` | Free gateway cannot reach your LAN |
-
-### Getting the code into Wokwi
-
-Run the generator once:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File iot\tools\make_wokwi_sketch.ps1
-```
-
-It writes `iot/wokwi/` containing `sketch.ino` (with `config.h` inlined so there is
-only one file to paste), `diagram.json`, `wokwi.toml`, and a locally compiled
-`build/`. Re-run it after editing `config.h` or the firmware. The folder is
-git-ignored because the inlined config holds your Wi-Fi password and shared secret.
-
-**Route A — browser.** Paste `sketch.ino` into Wokwi's **sketch.ino** tab and
-`diagram.json` into the **diagram.json** tab, then add **TinyGPSPlus**,
-**ArduinoJson** and **LiquidCrystal I2C** from **Library Manager**. Builds run on
-Wokwi's shared servers, so you may hit a "Build Servers Busy" queue; retrying
-usually clears it. Saving a project needs a free Wokwi account — without one you get
-a single save, then "Project saving failed".
-
-**Route B — VS Code (more reliable).** Install the *Wokwi for VS Code* extension,
-press `F1` → *Wokwi: Request a new License* (free), open the `iot/wokwi` folder, then
-`F1` → *Wokwi: Start Simulator*. This compiles locally, so there is no build queue,
-and the extension bundles the **Private IoT Gateway** — meaning the simulated ESP32
-can reach your machine directly and **ngrok is not needed**. Switch two lines in
-`config.h` and regenerate:
-
-```cpp
-#define API_URL "http://host.wokwi.internal:8000/api/v1/gps/ingest"
-#define USE_HTTPS 0
-```
-
-Prefer two files in the browser instead of the inlined one? Use the chevron at the
-right-hand end of Wokwi's tab strip to add a file named exactly `config.h`, paste
-`iot/firmware/armory_tracker/config.h` into it, and use the unmodified
-`armory_tracker.ino` in the sketch tab.
-
-### What the diagram contains
-
-There is no NEO-6M part in Wokwi, so the GPS module cannot appear on the canvas —
-coordinates come from `SIMULATE_GPS` instead. The other components are real parts
-wired to features the firmware genuinely implements:
-
-| Part | Pin | Behaviour |
-|---|---|---|
-| LCD 1602 (I2C) | `GPIO21/22` | Live coordinates, satellites, uplink result |
-| Green LED | `GPIO25` | On once associated with the access point |
-| Blue LED | `GPIO26` | On once a position is valid |
-| Yellow LED | `GPIO33` | 1 flash = fix accepted, 3 flashes = rejected |
-| Pushbutton "TAMPER" | `GPIO27` | Fires the tamper interrupt; alarms on LCD + buzzer |
-| Potentiometer "BATTERY" | `GPIO34` | Sets `battery_pct` in the payload |
-| Piezo buzzer | `GPIO32` | Chirp on accepted uplink, alarm pattern on tamper |
-
-Enable them with `HAS_LCD`, `HAS_STATUS_LEDS`, `HAS_TAMPER_SWITCH`,
-`HAS_BATTERY_MONITOR`, and `HAS_BUZZER`. Every combination compiles; each is
-independent, so switch off anything you do not want on the canvas.
-
-### Components that cannot be simulated
-
-| Guide component | Why not | Where it is tested |
-|---|---|---|
-| GY-NEO6MV2 GPS | No GPS part exists in Wokwi | `SIMULATE_GPS`, then real hardware |
-| Li-Po battery, TP4056, 5V boost | Wokwi does not simulate power supplies | Bench test with a multimeter |
-| Breadboard, jumper wires, enclosure | Physical assembly only | Section 2 and the hardware guides |
-| Futronic FS80H/FS88H scanner | USB device on the Windows workstation, not on the ESP32 | Vendor SDK + bridge app |
-| Arduino Nano (optional watchdog) | Its role is power management, which is not simulated | Optional on real hardware |
-
-The reed switch and the 100k/100k divider *are* represented — by the pushbutton and
-the potentiometer respectively, driving the same firmware code paths.
-
-The potentiometer is mapped differently in simulation: the raw ADC reading maps
-straight onto 0-100% so the knob acts as a battery gauge. On real hardware the same
-pin is read as a voltage through the 100k/100k divider, which never spans the full
-ADC range. Both paths live in `readBatteryPct()`.
-
-Because there are no satellites, the clock comes from NTP. The device prints
-`waiting for NTP before the first simulated fix` until it syncs, then transmits
-normally. Set `SIM_STEP_METERS` higher to walk out of a geofence and exercise the
-violation alert.
-
-> **Security note.** Wokwi's free Public Gateway monitors traffic and its own docs
-> advise against sensitive data. Anything you send there — including
-> `IOT_HMAC_SECRET` and coordinates — leaves your network. Use a throwaway secret
-> and seeded demo data only, never production values, and close any tunnel afterwards.
-
-## 11. No hardware? Use the simulator
+## 10. No hardware? Use the simulator
 
 ```powershell
 cd iot\simulator

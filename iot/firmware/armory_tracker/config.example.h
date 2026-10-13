@@ -7,10 +7,7 @@
  */
 #pragma once
 
-/* ---------- Wi-Fi (2.4 GHz only — ESP32 cannot join 5 GHz) ----------
- * For the Wokwi simulator use the virtual access point instead:
- *   WIFI_SSID "Wokwi-GUEST", WIFI_PASS "", WIFI_CHANNEL 6
- */
+/* ---------- Wi-Fi (2.4 GHz only — ESP32 cannot join 5 GHz) ---------- */
 #define WIFI_SSID "YourWiFiName"
 #define WIFI_PASS "YourWiFiPassword"
 
@@ -26,7 +23,7 @@
  */
 
 /* 0 = scan for the network. A fixed channel skips the scan and saves about
- * 4 seconds; Wokwi's virtual access point is always on channel 6. */
+ * 4 seconds. */
 #define WIFI_CHANNEL 0
 
 /* ---------- Backend endpoint ----------
@@ -90,11 +87,10 @@
 #define GPS_TX_PIN 19 /* ESP32 D19  --> GPS RX */
 #define GPS_BAUD 9600
 
-/* ---------- Simulated GPS (Wokwi / bench testing without hardware) ----------
+/* ---------- Simulated GPS (bench testing without hardware) ----------
  * 1 = build NMEA sentences in code and feed them through TinyGPSPlus instead of
  *     reading the UART. The parsing, signing, and HTTP paths stay identical, so
  *     this exercises real firmware logic with no GPS module attached.
- * Wokwi has no NEO-6M part, so this is the only way to run there.
  * Keep 0 for real hardware.
  *
  * In this mode the clock comes from NTP, not from satellites, so the device
@@ -143,7 +139,7 @@
 
 /* ---------- Optional 16x2 I2C LCD ----------
  * Shows live coordinates, satellite count and the last uplink result.
- * Requires the "LiquidCrystal I2C" library. Wokwi's module answers at 0x27.
+ * Requires the "LiquidCrystal I2C" library. Most modules answer at 0x27.
  */
 #define HAS_LCD 0
 #define LCD_I2C_ADDR 0x27

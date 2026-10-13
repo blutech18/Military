@@ -81,16 +81,16 @@ This guide walks you through everything from buying parts to having a working GP
 
 ## 4. WIRING DIAGRAM
 
-### Pin Connections (ESP32 ↔ GY-NEO6MV2)
+### Pin Connections (ESP32 ↔ GPS module: GY-NEO6MV2 or NEO-M8N)
 
 ```
 ┌─────────────────┐          ┌──────────────────┐
-│    ESP32         │          │   GY-NEO6MV2     │
+│    ESP32         │          │ GPS (6M / M8N)   │
 │                  │          │                  │
 │  3V3  ──────────┼──────────┼── VCC            │
 │  GND  ──────────┼──────────┼── GND            │
-│  GPIO16 (RX2) ──┼──────────┼── TX             │
-│  GPIO17 (TX2) ──┼──────────┼── RX             │
+│  D18 (GPIO18) ──┼──────────┼── TX             │
+│  D19 (GPIO19) ──┼──────────┼── RX             │
 │                  │          │                  │
 └─────────────────┘          └──────────────────┘
 ```
@@ -103,10 +103,14 @@ This guide walks you through everything from buying parts to having a working GP
    - ESP32 `3V3` pin → GPS module `VCC` pin (red wire)
    - ESP32 `GND` pin → GPS module `GND` pin (black wire)
 4. **Connect data:**
-   - ESP32 `GPIO16` → GPS module `TX` pin (yellow/green wire)
-   - ESP32 `GPIO17` → GPS module `RX` pin (orange/blue wire)
+   - ESP32 `D18` → GPS module `TX` pin (yellow/green wire)
+   - ESP32 `D19` → GPS module `RX` pin (orange/blue wire)
 
-> **IMPORTANT:** GPS TX goes to ESP32 RX (GPIO16), and GPS RX goes to ESP32 TX (GPIO17). This is a "crossover" — TX always connects to RX.
+> **IMPORTANT:** GPS TX goes to ESP32 RX (D18), and GPS RX goes to ESP32 TX (D19). This is a "crossover" — TX always connects to RX.
+>
+> The ESP32-WROOM-32 board used here has no GPIO16/17 header pins, which is why the GPS is on D18/D19 (`GPS_RX_PIN 18`, `GPS_TX_PIN 19` in `config.h`). Go by the labels printed next to the GPS pins: the pin order differs between the NEO-6M and NEO-M8N boards.
+
+> **SOLDER THE GPS HEADER PINS.** GPS modules ship with the pin strip loose. Unsoldered pins touch only by chance: the power LED lights (even the fix LED blinks) while the data on TX never reaches the ESP32. Each joint should be a small shiny cone, and no solder may join two pins. Do not push the GPS board's pins into one breadboard row either: the breadboard connects them.
 
 ### Visual Layout on Breadboard
 
@@ -119,8 +123,8 @@ This guide walks you through everything from buying parts to having a working GP
     │  │          │      │              │   │
     │  │ 3V3  ●───┼──────┼───● VCC      │   │
     │  │ GND  ●───┼──────┼───● GND      │   │
-    │  │ G16  ●───┼──────┼───● TX       │   │
-    │  │ G17  ●───┼──────┼───● RX       │   │
+    │  │ D18  ●───┼──────┼───● TX       │   │
+    │  │ D19  ●───┼──────┼───● RX       │   │
     │  │          │      │              │   │
     │  │   [USB]  │      │  [Antenna]   │   │
     │  └──────────┘      └──────────────┘   │
@@ -394,7 +398,9 @@ Dashboard:
 - You MUST be outdoors or at a window with sky view
 - The antenna must face UP
 - Wait at least 3 minutes for cold start
-- Check wiring: GPS TX → ESP32 GPIO16, GPS RX → ESP32 GPIO17
+- If Serial Monitor says `[gps] NO DATA from the GPS module`, it is the wiring, not the sky: check GPS TX → ESP32 D18 and GND, and that the GPS header pins are soldered with no solder joining two pins
+- `[gps] no fix yet (satellites in view=N ...)` means the wiring is fine and it needs more open sky
+- Check wiring: GPS TX → ESP32 D18, GPS RX → ESP32 D19
 
 ### POST returns 401 (Invalid signature)
 - HMAC_SECRET in firmware must EXACTLY match IOT_HMAC_SECRET in .env
@@ -477,7 +483,7 @@ For a truly portable tracker attached to a firearm:
 ├─────────────────────────────────────────────────────┤
 │  Sketch:    firmware/armory_tracker/                │
 │  Board:     ESP32 Dev Module                        │
-│  GPS:       GY-NEO6MV2 on UART2 (GPIO16/17)        │
+│  GPS:       NEO-6M / NEO-M8N on UART2 (D18/D19)    │
 │  Baud:      9600 (GPS) / 115200 (Serial Monitor)   │
 │  Interval:  30 seconds                             │
 │  Protocol:  HTTP(S) POST + HMAC-SHA256 signature    │
@@ -495,11 +501,11 @@ For a truly portable tracker attached to a firearm:
 ```
 1. GPS satellites broadcast signals
          ↓
-2. GY-NEO6MV2 receives signals, calculates lat/lon
+2. GPS module (NEO-6M / NEO-M8N) receives signals, calculates lat/lon
          ↓
 3. GPS module sends NMEA data via serial (TX pin)
          ↓
-4. ESP32 reads serial on GPIO16, parses with TinyGPSPlus
+4. ESP32 reads serial on D18, parses with TinyGPSPlus
          ↓
 5. ESP32 builds JSON payload with coordinates + metadata
          ↓
