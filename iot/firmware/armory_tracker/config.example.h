@@ -86,8 +86,8 @@
  */
 
 /* ---------- GPS wiring (UART2) ---------- */
-#define GPS_RX_PIN 16 /* ESP32 GPIO16  <-- GPS TX */
-#define GPS_TX_PIN 17 /* ESP32 GPIO17  --> GPS RX */
+#define GPS_RX_PIN 18 /* ESP32 D18  <-- GPS TX */
+#define GPS_TX_PIN 19 /* ESP32 D19  --> GPS RX */
 #define GPS_BAUD 9600
 
 /* ---------- Simulated GPS (Wokwi / bench testing without hardware) ----------

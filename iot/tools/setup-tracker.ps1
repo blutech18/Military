@@ -159,6 +159,10 @@ function Write-TrackerConfig([string]$Ssid, [string]$Password, [string]$Ip, [int
     $text = Set-Define $text 'API_URL' (ConvertTo-CString "http://${Ip}:$ApiPort/api/v1/gps/ingest")
     $text = Set-Define $text 'USE_HTTPS' '0'
     $text = Set-Define $text 'EQUIPMENT_ID' "$EquipmentId"
+    # The GPS is wired to D18/D19 (this board has no GPIO16/17 headers); a config.h made from an
+    # older template still says 16/17, which reads nothing even under open sky.
+    $text = Set-Define $text 'GPS_RX_PIN' '18'
+    $text = Set-Define $text 'GPS_TX_PIN' '19'
     # Keep the signing secret identical to the backend's, or every position is rejected (401).
     $secret = Get-EnvValue 'IOT_HMAC_SECRET'
     if ($secret) { $text = Set-Define $text 'HMAC_SECRET' (ConvertTo-CString $secret) }
