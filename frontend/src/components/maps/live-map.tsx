@@ -1,6 +1,6 @@
 "use client";
 
-import { MapContainer, TileLayer, Marker, Popup, Circle, Polyline, ZoomControl, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Circle, ZoomControl, useMap } from "react-leaflet";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
@@ -11,6 +11,7 @@ import { fmtRelative, cn } from "@/lib/utils";
 import { useMapMountKey } from "./use-map-mount-key";
 import { MapResizeObserver } from "./map-resize-observer";
 import { TILE_ATTRIBUTION, TILE_DARKEN_CLASS, TILE_MAX_ZOOM, TILE_URL } from "./tiles";
+import { RoadTrailLayer, TrailModeToggle, useRoadTrail, useTrailMode, type TrailFix } from "./road-trail";
 
 // Fix default Leaflet icon paths under bundlers like Webpack / Turbopack
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -213,7 +214,7 @@ export function LiveMap() {
   const { data: trail } = useQuery({
     queryKey: ["gps-trail", activeId],
     queryFn: async () =>
-      (await api.get<{ latitude: number; longitude: number }[]>(
+      (await api.get<{ latitude: number; longitude: number; captured_at: string }[]>(
         `/gps/history/${activeId}?limit=40`
       )).data,
     enabled: activeId != null,
@@ -223,10 +224,18 @@ export function LiveMap() {
     },
   });
 
-  const trailPositions = useMemo<[number, number][]>(
-    () => (trail ?? []).map((p) => [Number(p.latitude), Number(p.longitude)] as [number, number]),
+  /* The API returns newest first; the trail is drawn in time order and snapped to the roads. */
+  const trailFixes = useMemo<TrailFix[]>(
+    () =>
+      [...(trail ?? [])].reverse().map((p) => ({
+        lat: Number(p.latitude),
+        lon: Number(p.longitude),
+        time: p.captured_at ? Date.parse(p.captured_at) / 1000 : undefined,
+      })),
     [trail]
   );
+  const [trailMode, setTrailMode] = useTrailMode();
+  const roadTrail = useRoadTrail(trailFixes, trailMode === "roads");
 
   const trackedPosition = useMemo<[number, number] | null>(
     () => (tracked ? [Number(tracked.lat), Number(tracked.lon)] : null),
@@ -265,13 +274,8 @@ export function LiveMap() {
         <TileLayer attribution={TILE_ATTRIBUTION} url={TILE_URL} maxZoom={TILE_MAX_ZOOM} />
         <ZoomControl position="topright" />
 
-        {/* Path the tracked firearm has actually travelled */}
-        {trailPositions.length > 1 && (
-          <Polyline
-            positions={trailPositions}
-            pathOptions={{ color: "#aeb771", weight: 2.5, opacity: 0.75 }}
-          />
-        )}
+        {/* Path the tracked firearm has actually travelled, along the roads */}
+        <RoadTrailLayer fixes={trailFixes} mode={trailMode} segments={roadTrail.segments} />
 
         {data?.geofences.map((g) => (
           <Circle
@@ -488,6 +492,10 @@ export function LiveMap() {
         <InitialFit points={points} />
         <FollowTarget position={trackedPosition} active={following} onDisengage={disengage} />
       </MapContainer>
+
+      {trailFixes.length > 1 && (
+        <TrailModeToggle className="right-3 bottom-7" mode={trailMode} onChange={setTrailMode} status={roadTrail.status} />
+      )}
 
       {/* Tracking control */}
       {tracked && (
