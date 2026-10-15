@@ -33,6 +33,7 @@ class ReportController extends Controller
         return $this->respond($request, $rows, 'inventory_report', [
             'title' => 'Inventory Report',
             'columns' => array_keys($rows->first() ?? ['serial_number'=>null]),
+            'money'   => ['cost_php'],
         ]);
     }
 
@@ -91,8 +92,7 @@ class ReportController extends Controller
                 'firearm'        => optional($m->firearm)->serial_number,
                 'type'           => $m->maintenance_type,
                 'description'    => $m->description,
-                'condition_before'=> $m->condition_before,
-                'condition_after'=> $m->condition_after,
+                'status'         => $m->resultLabel(),
                 'date'           => $m->maintenance_date->format('Y-m-d'),
                 'next'           => optional($m->next_schedule)->format('Y-m-d'),
                 'technician'     => optional($m->technician)->fullName(),
@@ -102,6 +102,7 @@ class ReportController extends Controller
         return $this->respond($request, $rows, 'maintenance_report', [
             'title'   => 'Maintenance Report',
             'columns' => array_keys($rows->first() ?? ['maintenance_id'=>null]),
+            'money'   => ['cost'],
         ]);
     }
 
@@ -256,10 +257,25 @@ class ReportController extends Controller
 
     protected function pdf(Request $request, $rows, string $name, array $meta)
     {
+        // Peso columns print as whole pesos and get a total row at the bottom.
+        $money  = array_values(array_intersect($meta['money'] ?? [], $meta['columns']));
+        $totals = [];
+        foreach ($money as $c) {
+            // Sum of the whole-peso amounts as printed, so the column adds up on paper.
+            $totals[$c] = (int) $rows->sum(fn($r) => (int) round((float) ($r[$c] ?? 0)));
+        }
+
+        $logoPath = resource_path('images/10rcdg-logo.png');
+        $logo = is_file($logoPath) ? 'data:image/png;base64,' . base64_encode(file_get_contents($logoPath)) : null;
+
         $pdf = Pdf::loadView('reports.generic', [
             'title'       => $meta['title'],
             'columns'     => $meta['columns'],
             'rows'        => $rows,
+            'money'       => $money,
+            'totals'      => $totals,
+            'logo'        => $logo,
+            'preparedBy'  => optional($request->user())->fullName(),
             'generatedAt' => now()->format('Y-m-d H:i:s'),
         ])->setPaper('a4', 'landscape');
 

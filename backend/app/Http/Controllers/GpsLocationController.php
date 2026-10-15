@@ -46,15 +46,21 @@ class GpsLocationController extends Controller
             'polygon'          => ['sometimes', 'nullable', 'array'],
         ]);
 
+        $changes = AuditLogger::diff($loc->getAttributes(), $data);
         $loc->update($data);
-        AuditLogger::log('config_change', "Updated geofence {$loc->location_name}", $request->user(), request: $request);
+        AuditLogger::log('config_change', "Updated geofence {$loc->location_name}", $request->user(), request: $request,
+            metadata: ['location_id' => $loc->location_id, 'changes' => $changes]);
         return response()->json($loc);
     }
 
     public function destroy(Request $request, int $id): JsonResponse
     {
         $loc = GpsLocation::findOrFail($id);
-        AuditLogger::log('config_change', "Deleted geofence {$loc->location_name}", $request->user(), request: $request);
+        if ($refused = $this->confirmPassword($request, "delete geofence {$loc->location_name}")) {
+            return $refused;
+        }
+        AuditLogger::log('config_change', "Deleted geofence {$loc->location_name}", $request->user(), request: $request,
+            metadata: ['deleted' => $loc->only(['location_id', 'location_name', 'center_latitude', 'center_longitude', 'radius_meters', 'security_level', 'is_armory'])]);
         $loc->delete();
         return response()->json(['message' => 'Deleted.']);
     }

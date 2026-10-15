@@ -10,6 +10,7 @@ use App\Models\GpsLog;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
@@ -86,11 +87,56 @@ class GpsIngestTest extends TestCase
         $outside['captured_at'] = $baseTime->copy()->addSeconds(2)->toIso8601String();
         $this->signedPost($outside)->assertOk();
 
+        // One breach: one alert for each person who oversees the armory, the issuer included.
         $alerts = Notification::where('type', 'geofence_violation')
             ->where('equipment_id', $firearm->equipment_id)
             ->get();
-        $this->assertCount(1, $alerts);
-        $this->assertSame($transaction->authorized_by, $alerts->first()->user_id);
+        $this->assertCount($this->oversightRecipients($transaction)->count(), $alerts);
+        $this->assertEqualsCanonicalizing($this->oversightRecipients($transaction)->all(), $alerts->pluck('user_id')->all());
+        $this->assertContains($transaction->authorized_by, $alerts->pluck('user_id'));
+        $this->assertContains(User::where('username', 'cmd.officer')->value('user_id'), $alerts->pluck('user_id'));
+    }
+
+    public function test_a_breach_emails_only_the_issuer_while_everyone_gets_the_in_app_alert(): void
+    {
+        Http::fake();
+        config(['services.resend.key' => 'test-resend-key']);
+
+        [$firearm, $transaction] = $this->activeAssignment();
+        $outside = $this->payload($firearm, $transaction, now()->subSeconds(2)->toIso8601String());
+        $outside['latitude'] = 0;
+        $outside['longitude'] = 0;
+        $this->signedPost($outside)->assertOk();
+
+        $this->assertGreaterThan(1, Notification::where('type', 'geofence_violation')->count());
+        Http::assertSentCount(1);
+        Http::assertSent(fn($request) => str_contains(json_encode($request->data()), (string) User::find($transaction->authorized_by)->email));
+    }
+
+    public function test_coming_back_inside_a_zone_is_announced_once(): void
+    {
+        [$firearm, $transaction] = $this->activeAssignment();
+        $armory = GpsLocation::where('is_armory', true)->firstOrFail();
+        $baseTime = now()->subSeconds(4);
+
+        $outside = $this->payload($firearm, $transaction, $baseTime->toIso8601String());
+        $outside['latitude'] = 0;
+        $outside['longitude'] = 0;
+        $this->signedPost($outside)->assertOk();
+
+        $inside = $this->payload($firearm, $transaction, $baseTime->copy()->addSecond()->toIso8601String());
+        $inside['latitude'] = (float) $armory->center_latitude;
+        $inside['longitude'] = (float) $armory->center_longitude;
+        $this->signedPost($inside)->assertOk()->assertJsonFragment(['zones' => GpsLocation::all()
+            ->filter(fn($z) => $z->contains((float) $armory->center_latitude, (float) $armory->center_longitude))
+            ->pluck('location_name')->values()->all()]);
+
+        $inside['captured_at'] = $baseTime->copy()->addSeconds(2)->toIso8601String();
+        $this->signedPost($inside)->assertOk();
+
+        $returns = Notification::where('type', 'geofence_return')->where('equipment_id', $firearm->equipment_id)->get();
+        $this->assertCount($this->oversightRecipients($transaction)->count(), $returns);
+        $this->assertStringContainsString($armory->location_name, $returns->first()->message);
     }
 
     public function test_utc_timestamps_are_stored_faithfully_and_ordering_is_enforced(): void
@@ -127,9 +173,20 @@ class GpsIngestTest extends TestCase
         $outside['captured_at'] = $baseTime->copy()->addSecond()->toIso8601String();
         $this->signedPost($outside)->assertOk();
 
-        $this->assertSame(1, Notification::where('type', 'geofence_violation')
+        $this->assertSame($this->oversightRecipients($transaction)->count(), Notification::where('type', 'geofence_violation')
             ->where('equipment_id', $firearm->equipment_id)
             ->count());
+    }
+
+    /** Active Administrators, Command Officers and Armory Custodians, plus whoever issued the firearm. */
+    private function oversightRecipients(Transaction $transaction)
+    {
+        return User::where('status', User::STATUS_ACTIVE)
+            ->whereHas('role', fn($q) => $q->whereIn('role_name', Notification::OVERSIGHT_ROLES))
+            ->pluck('user_id')
+            ->push($transaction->authorized_by)
+            ->unique()
+            ->values();
     }
 
     private function activeAssignment(): array

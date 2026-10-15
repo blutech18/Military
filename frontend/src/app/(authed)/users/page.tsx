@@ -8,10 +8,15 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { CLEARANCES, fmtRelative } from "@/lib/utils";
 import { DataError } from "@/components/ui/data-error";
-import { ActionModal } from "@/components/ui/action-modal";
+import { PasswordConfirmModal } from "@/components/ui/password-confirm-modal";
+import { useAuthStore } from "@/store/auth";
 
 export default function UsersPage() {
   const qc = useQueryClient();
+  // A Command Officer manages every account except Administrator ones (the API enforces this too).
+  const me = useAuthStore((s) => s.user);
+  const isAdmin = me?.role === "Administrator";
+  const canTouch = (u: any) => isAdmin || u.role?.role_name !== "Administrator";
   const [deactivateTarget, setDeactivateTarget] = useState<any | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any | null>(null);
@@ -99,13 +104,13 @@ export default function UsersPage() {
     },
   });
 
+  // Errors are shown inside the password dialog, which stays open until the password is right.
   const remove = useMutation({
-    mutationFn: (id: number) => api.delete(`/users/${id}`),
+    mutationFn: ({ id, password }: { id: number; password: string }) => api.delete(`/users/${id}`, { data: { password } }),
     onSuccess: () => {
       toast.success("User deactivated.");
       qc.invalidateQueries({ queryKey: ["users"] });
     },
-    onError: (e: any) => toast.error(e.response?.data?.message ?? "Delete failed."),
   });
 
   return (
@@ -175,7 +180,8 @@ export default function UsersPage() {
                   <div>
                     <label className="text-xs text-steel-400 mb-1 block">Role</label>
                     <select className="input-field w-full" value={form.role_id} onChange={(e) => changeRole(Number(e.target.value))}>
-                      {roles?.map((r: any) => <option key={r.role_id} value={r.role_id}>{r.role_name}</option>)}
+                      {roles?.filter((r: any) => isAdmin || r.role_name !== "Administrator")
+                        .map((r: any) => <option key={r.role_id} value={r.role_id}>{r.role_name}</option>)}
                     </select>
                   </div>
                   <div>
@@ -244,13 +250,17 @@ export default function UsersPage() {
                 <td className="text-center text-xs text-steel-400">{u.last_login_at ? fmtRelative(u.last_login_at) : "Never"}</td>
                 <td className="text-center"><span className={`pill ${u.status ? "pill-ok" : "pill-muted"}`}>{u.status ? "Active" : "Inactive"}</span></td>
                 <td className="text-center">
-                  <div className="flex justify-center gap-1">
-                    <button onClick={() => startEdit(u)} className="btn-ghost text-xs"><Pencil className="h-3.5 w-3.5" /></button>
-                    <button
-                      onClick={() => setDeactivateTarget(u)}
-                      className="btn-ghost text-xs text-red-400 hover:text-red-300"
-                    ><Trash2 className="h-3.5 w-3.5" /></button>
-                  </div>
+                  {canTouch(u) ? (
+                    <div className="flex justify-center gap-1">
+                      <button onClick={() => startEdit(u)} className="btn-ghost text-xs"><Pencil className="h-3.5 w-3.5" /></button>
+                      <button
+                        onClick={() => setDeactivateTarget(u)}
+                        className="btn-ghost text-xs text-red-400 hover:text-red-300"
+                      ><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-steel-500" title="Only an Administrator can change Administrator accounts.">Admin only</span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -258,19 +268,13 @@ export default function UsersPage() {
         </table>
       </div>
 
-      <ActionModal
+      <PasswordConfirmModal
         open={deactivateTarget !== null}
         onClose={() => setDeactivateTarget(null)}
-        onConfirm={() => {
-          if (deactivateTarget) {
-            remove.mutate(deactivateTarget.user_id);
-            setDeactivateTarget(null);
-          }
-        }}
+        onConfirm={(password) => remove.mutateAsync({ id: deactivateTarget.user_id, password })}
         title="Deactivate User"
-        description={`Are you sure you want to deactivate "${deactivateTarget?.username}"? They will no longer be able to log in.`}
+        description={`Deactivate "${deactivateTarget?.username}"? They will no longer be able to log in.`}
         confirmLabel="Deactivate"
-        confirmVariant="danger"
       />
     </div>
   );

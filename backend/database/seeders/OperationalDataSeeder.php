@@ -71,7 +71,6 @@ class OperationalDataSeeder extends Seeder
         $purposes = [
             Transaction::PURPOSE_TRAINING,
             Transaction::PURPOSE_OPERATION,
-            Transaction::PURPOSE_INSPECTION,
         ];
 
         for ($i = 0; $i < 14; $i++) {
@@ -221,9 +220,9 @@ class OperationalDataSeeder extends Seeder
     {
         $jobs = [
             ['index' => 2, 'type' => 'Cleaning',    'desc' => 'Routine bore cleaning and lubrication after range use.',      'before' => 78, 'after' => 92, 'cost' => 0,       'parts' => []],
-            ['index' => 3, 'type' => 'Repair',      'desc' => 'Replaced worn extractor spring and firing pin.',              'before' => 54, 'after' => 88, 'cost' => 2850.00, 'parts' => ['Extractor spring', 'Firing pin']],
+            ['index' => 3, 'type' => 'Repair',      'desc' => 'Replaced worn extractor spring and firing pin.',              'before' => 54, 'after' => 88, 'cost' => 2850, 'parts' => ['Extractor spring', 'Firing pin']],
             ['index' => 6, 'type' => 'Inspection',  'desc' => 'Quarterly armorer inspection, headspace within tolerance.',   'before' => 85, 'after' => 85, 'cost' => 0,       'parts' => []],
-            ['index' => 7, 'type' => 'Calibration', 'desc' => 'Sight realignment and function check on crew-served weapon.', 'before' => 60, 'after' => 80, 'cost' => 4200.00, 'parts' => ['Rear sight assembly']],
+            ['index' => 7, 'type' => 'Calibration', 'desc' => 'Sight realignment and function check on crew-served weapon.', 'before' => 60, 'after' => 80, 'cost' => 4200, 'parts' => ['Rear sight assembly']],
         ];
 
         foreach ($jobs as $i => $job) {
@@ -236,9 +235,8 @@ class OperationalDataSeeder extends Seeder
                 'description'      => $job['desc'],
                 'maintenance_date' => $date,
                 'next_schedule'    => (clone $date)->addMonths(3),
-                'condition_before' => $job['before'],
-                'condition_after'  => $job['after'],
                 'maintenance_type' => $job['type'],
+                'result_status'    => MaintenanceRecord::RESULT_SERVICEABLE,
                 'cost'             => $job['cost'],
                 'parts_replaced'   => $job['parts'],
                 'remarks'          => 'Serviced by unit armorer. Returned to serviceable status.',

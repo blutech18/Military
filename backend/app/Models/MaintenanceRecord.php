@@ -12,15 +12,25 @@ class MaintenanceRecord extends Model
 
     protected $primaryKey = 'maintenance_id';
 
+    /** Whether the firearm is fit for use once the work is done. */
+    public const RESULT_SERVICEABLE   = 1;
+    public const RESULT_NEEDS_REPAIR  = 2;
+    public const RESULT_UNSERVICEABLE = 3;
+
+    public const RESULT_LABELS = [
+        self::RESULT_SERVICEABLE   => 'Serviceable',
+        self::RESULT_NEEDS_REPAIR  => 'Needs Further Repair',
+        self::RESULT_UNSERVICEABLE => 'Unserviceable',
+    ];
+
     protected $fillable = [
         'equipment_id',
         'performed_by',
         'description',
         'maintenance_date',
         'next_schedule',
-        'condition_before',
-        'condition_after',
         'maintenance_type',
+        'result_status',
         'cost',
         'parts_replaced',
         'remarks',
@@ -30,8 +40,14 @@ class MaintenanceRecord extends Model
         'maintenance_date' => 'datetime',
         'next_schedule'    => 'datetime',
         'parts_replaced'   => 'array',
-        'cost'             => 'decimal:2',
+        'result_status'    => 'integer',
+        'cost'             => 'integer',
     ];
+
+    public function resultLabel(): string
+    {
+        return self::RESULT_LABELS[$this->result_status] ?? 'Unknown';
+    }
 
     public function firearm(): BelongsTo
     {

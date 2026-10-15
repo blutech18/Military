@@ -9,7 +9,8 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuthStore, hasRole } from "@/store/auth";
 import { DataError } from "@/components/ui/data-error";
-import { ActionModal } from "@/components/ui/action-modal";
+import { PasswordConfirmModal } from "@/components/ui/password-confirm-modal";
+import { ZoneOccupancy } from "@/components/maps/zone-occupancy";
 
 const GeofencePicker = dynamic(
   () => import("@/components/maps/geofence-picker").then((m) => m.GeofencePicker),
@@ -29,7 +30,7 @@ interface GpsLocation {
 export default function GeofencesPage() {
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
-  const canManage = hasRole(user, "Administrator", "S4 Officer");
+  const canManage = hasRole(user, "Administrator", "Command Officer", "S4 Officer");
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<GpsLocation | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<GpsLocation | null>(null);
@@ -91,13 +92,13 @@ export default function GeofencesPage() {
     onError: (e: any) => toast.error(e.response?.data?.message ?? "Failed."),
   });
 
+  // Errors are shown inside the password dialog, which stays open until the password is right.
   const remove = useMutation({
-    mutationFn: (id: number) => api.delete(`/locations/${id}`),
+    mutationFn: ({ id, password }: { id: number; password: string }) => api.delete(`/locations/${id}`, { data: { password } }),
     onSuccess: () => {
       toast.success("Geofence deleted.");
       qc.invalidateQueries({ queryKey: ["geofences"] });
     },
-    onError: (e: any) => toast.error(e.response?.data?.message ?? "Delete failed."),
   });
 
   return (
@@ -108,7 +109,7 @@ export default function GeofencesPage() {
             <MapPin className="h-5 w-5 text-olive-300" /> Geofence Management
           </h1>
           <p className="text-sm text-steel-400">
-            Define authorized zones. Firearms leaving all zones trigger critical alerts.
+            Define authorized zones and see which zone each firearm is in. A firearm leaving all zones raises an alert with an alarm sound.
           </p>
         </div>
         {canManage && (
@@ -117,6 +118,8 @@ export default function GeofencesPage() {
           </button>
         )}
       </div>
+
+      <ZoneOccupancy />
 
       {showForm && canManage && createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={resetForm}>
@@ -262,19 +265,13 @@ export default function GeofencesPage() {
         </table>
       </div>
 
-      <ActionModal
+      <PasswordConfirmModal
         open={deleteTarget !== null}
         onClose={() => setDeleteTarget(null)}
-        onConfirm={() => {
-          if (deleteTarget) {
-            remove.mutate(deleteTarget.location_id);
-            setDeleteTarget(null);
-          }
-        }}
+        onConfirm={(password) => remove.mutateAsync({ id: deleteTarget!.location_id, password })}
         title="Delete Geofence"
-        description={`Are you sure you want to delete "${deleteTarget?.location_name}"? This action cannot be undone.`}
+        description={`Delete "${deleteTarget?.location_name}"? This cannot be undone.`}
         confirmLabel="Delete"
-        confirmVariant="danger"
       />
     </div>
   );

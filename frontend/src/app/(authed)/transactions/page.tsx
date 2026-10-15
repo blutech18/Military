@@ -1,11 +1,11 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { AlertCircle, Filter, Loader2, Plus, RefreshCw, X } from "lucide-react";
+import { AlertCircle, Filter, Loader2, Plus, RefreshCw, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuthStore, hasRole } from "@/store/auth";
@@ -17,6 +17,7 @@ import {
   TransactionRow,
   TransactionStatus,
 } from "@/components/transactions/transaction-ledger";
+import { LocateFirearmModal } from "@/components/transactions/locate-firearm-modal";
 
 const STATUS_FILTERS: Array<{
   value: "" | TransactionStatus;
@@ -79,7 +80,9 @@ function TransactionsContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const user = useAuthStore((state) => state.user);
-  const canAct = hasRole(user, "Administrator", "S4 Officer", "Armory Custodian");
+  // Releasing and receiving firearms is the Armory Custodian's job.
+  const canAct = hasRole(user, "Administrator", "Armory Custodian");
+  const canLocate = hasRole(user, "Administrator", "Command Officer", "S4 Officer", "Armory Custodian");
 
   const equipmentId = positiveInteger(searchParams.get("equipment_id"));
   const userId = positiveInteger(searchParams.get("user_id"));
@@ -89,13 +92,26 @@ function TransactionsContent() {
   const [returnTarget, setReturnTarget] = useState<TransactionRow | null>(null);
   const [returnCondition, setReturnCondition] = useState(2);
   const [showIssuance, setShowIssuance] = useState(false);
+  const [locateTarget, setLocateTarget] = useState<TransactionRow | null>(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+
+  // Search as the user types, without a request per keystroke.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(id);
+  }, [searchInput]);
 
   const transactionQuery = useQuery<LaravelPage<TransactionRow>>({
-    queryKey: ["transactions", status, page, equipmentId, userId],
+    queryKey: ["transactions", status, page, equipmentId, userId, search],
     queryFn: async () => (
       await api.get<LaravelPage<TransactionRow>>("/transactions", {
         params: {
           status: status || undefined,
+          search: search || undefined,
           equipment_id: equipmentId,
           user_id: userId,
           page,
@@ -115,11 +131,13 @@ function TransactionsContent() {
 
   const clearFilters = () => {
     setStatus("");
+    setSearchInput("");
+    setSearch("");
     setPage(1);
     router.replace(pathname, { scroll: false });
   };
 
-  const hasFilters = status !== "" || equipmentId != null || userId != null;
+  const hasFilters = status !== "" || search !== "" || equipmentId != null || userId != null;
 
   const returnMutation = useMutation({
     mutationFn: async ({ id, condition }: { id: number; condition: number }) => {
@@ -230,8 +248,31 @@ function TransactionsContent() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-3 xl:justify-end">
-              <p className="text-xs text-steel-400" aria-live="polite">
+            <div className="flex flex-wrap items-center justify-between gap-3 xl:flex-nowrap xl:justify-end">
+              <div className="relative w-full sm:w-72">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-steel-500" />
+                <input
+                  type="text"
+                  inputMode="search"
+                  enterKeyHint="search"
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder="Search name, serial, or #ID"
+                  aria-label="Search transactions"
+                  className="input-field h-9 w-full pl-9 pr-8 text-sm"
+                />
+                {searchInput && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchInput("")}
+                    aria-label="Clear search"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-steel-400 hover:text-white"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-steel-400 whitespace-nowrap" aria-live="polite">
                 <span className="font-semibold text-steel-100">{transactionQuery.data?.total ?? 0}</span>{" "}
                 {transactionQuery.data?.total === 1 ? "record" : "records"}
               </p>
@@ -290,6 +331,8 @@ function TransactionsContent() {
           isFetching={transactionQuery.isFetching}
           isError={transactionQuery.isError}
           canAct={canAct}
+          canLocate={canLocate}
+          onLocate={setLocateTarget}
           hasFilters={hasFilters}
           onRetry={() => { void transactionQuery.refetch(); }}
           onClearFilters={clearFilters}
@@ -300,6 +343,10 @@ function TransactionsContent() {
           onPageChange={setPage}
         />
       </div>
+
+      {locateTarget && (
+        <LocateFirearmModal transaction={locateTarget} onClose={() => setLocateTarget(null)} />
+      )}
 
       <ActionModal
         open={returnTarget !== null}
@@ -404,9 +451,7 @@ function IssuanceModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
   const personnelQuery = useQuery<LaravelPage<PersonnelOption>>({
     queryKey: ["personnel-for-issue"],
     queryFn: async () => (
-      await api.get<LaravelPage<PersonnelOption>>("/users", {
-        params: { role: "Personnel", only_active: 1, per_page: 100 },
-      })
+      await api.get<LaravelPage<PersonnelOption>>("/transactions/personnel")
     ).data,
   });
 
@@ -537,8 +582,6 @@ function IssuanceModal({ onClose, onSuccess }: { onClose: () => void; onSuccess:
                 >
                   <option value={1}>Training</option>
                   <option value={2}>Operation</option>
-                  <option value={3}>Maintenance</option>
-                  <option value={4}>Inspection</option>
                 </select>
               </div>
               <div>

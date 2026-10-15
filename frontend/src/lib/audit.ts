@@ -37,6 +37,9 @@ const AUDIT_ACTION_LABELS: Record<string, string> = {
   geofence_breach: "Geofence Breach",
   geofence_exit: "Geofence Exit",
   config_change: "Config Changed",
+  maintenance: "Maintenance Recorded",
+  password_confirm_failed: "Wrong Password on Delete",
+  audit_verify: "Audit Trail Verified",
 };
 
 /**

@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  BadgeCheck, Bell, ClipboardList, FileText, Fingerprint,
+  BadgeCheck, Bell, ClipboardCheck, ClipboardList, FileText, Fingerprint,
   Home, LogOut, MapPinned, QrCode, Settings, Shield, ShieldAlert, Users, Wrench, X, ChevronLeft, AlertTriangle, Loader2
 } from "lucide-react";
 import { useAuthStore, hasRole, hasClearance } from "@/store/auth";
@@ -18,14 +18,15 @@ import { BrandLogo } from "@/components/brand-logo";
 const ALL_ITEMS = [
   { href: "/dashboard",     label: "Command Dashboard", icon: Home,           roles: "*" },
   { href: "/firearms",      label: "Firearms",          icon: Shield,         roles: ["Administrator","Command Officer","S4 Officer","Armory Custodian","Personnel"] },
-  { href: "/scan",          label: "QR Scanner",        icon: QrCode,         roles: ["Administrator","S4 Officer","Armory Custodian","Personnel"] },
+  { href: "/scan",          label: "QR Scanner",        icon: QrCode,         roles: ["Administrator","Command Officer","S4 Officer","Armory Custodian"] },
   { href: "/transactions",  label: "Transactions",      icon: ClipboardList,  roles: ["Administrator","Command Officer","S4 Officer","Armory Custodian","Personnel"] },
   { href: "/gps",           label: "GPS Tracking",      icon: MapPinned,      roles: ["Administrator","Command Officer","S4 Officer","Armory Custodian"] },
-  { href: "/geofences",     label: "Geofences",         icon: MapPinned,      roles: ["Administrator","S4 Officer"] },
-  { href: "/maintenance",   label: "Maintenance",       icon: Wrench,         roles: ["Administrator","S4 Officer","Armory Custodian"] },
+  { href: "/geofences",     label: "Geofences",         icon: MapPinned,      roles: ["Administrator","Command Officer","S4 Officer","Armory Custodian"] },
+  { href: "/maintenance",   label: "Maintenance",       icon: Wrench,         roles: ["Administrator","Command Officer","S4 Officer","Armory Custodian"] },
+  { href: "/requests",      label: "Requests",          icon: ClipboardCheck, roles: ["Administrator","Command Officer","S4 Officer"] },
   { href: "/notifications", label: "Notifications",     icon: Bell,           roles: "*" },
   { href: "/audit",         label: "Audit Trail",       icon: ShieldAlert,    roles: ["Administrator","Command Officer","S4 Officer"] },
-  { href: "/users",         label: "User Management",   icon: Users,          roles: ["Administrator"] },
+  { href: "/users",         label: "User Management",   icon: Users,          roles: ["Administrator","Command Officer"] },
   { href: "/reports",       label: "Reports",           icon: FileText,       roles: ["Administrator","Command Officer","S4 Officer","Armory Custodian"] },
   { href: "/settings",      label: "Settings",          icon: Settings,       roles: "*" },
 ] as const;

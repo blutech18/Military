@@ -21,8 +21,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import Cookies from "js-cookie";
 import { api, TOKEN_COOKIE } from "@/lib/api";
-import { useAuthStore } from "@/store/auth";
+import { useAuthStore, hasRole } from "@/store/auth";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { alarmAudioBlocked, playAlarm, primeAlarmAudio } from "@/lib/alarm";
 import { cn, fmtRelative } from "@/lib/utils";
 
 interface TopbarProps {
@@ -57,7 +59,8 @@ export function Topbar({ onMenuClick }: TopbarProps) {
     queryKey: ["unread-notifications"],
     queryFn: async () => (await api.get<{ count: number; items: any[] }>("/notifications/unread")).data,
     refetchInterval: NOTIF_POLL_MS,
-    refetchIntervalInBackground: false,
+    // Keep polling in a background tab: a geofence breach must still sound the alarm.
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
     enabled: !!user,
@@ -86,7 +89,10 @@ export function Topbar({ onMenuClick }: TopbarProps) {
   // IoT connection indicator — pushed live over Server-Sent Events.
   // Falls back to fast polling if the stream is unavailable, so the indicator
   // is always responsive regardless of deployment environment.
-  const iot = useIotStatusStream(!!user);
+  // Only roles the API lets see tracker status: polling it as Personnel would log an
+  // "Unauthorized Access Attempt" every few seconds.
+  const canSeeIot = hasRole(user, "Administrator", "Command Officer", "S4 Officer", "Armory Custodian");
+  const iot = useIotStatusStream(canSeeIot);
 
   // Snap-refresh notifications on tab focus / network reconnect so the bell
   // badge is fresh the moment the user comes back.
@@ -195,12 +201,14 @@ export function Topbar({ onMenuClick }: TopbarProps) {
         {/* Right side — fixed width, won't shrink */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <LiveIndicator pulse={notif.isFetching} stale={notif.isError} />
-          <IotIndicator
-            status={iot.status}
-            isError={iot.isError}
-            isLoading={iot.isLoading}
-            isStreaming={iot.isStreaming}
-          />
+          {canSeeIot && (
+            <IotIndicator
+              status={iot.status}
+              isError={iot.isError}
+              isLoading={iot.isLoading}
+              isStreaming={iot.isStreaming}
+            />
+          )}
 
           <button onClick={() => setIsDrawerOpen(true)} className="relative btn-ghost p-2" aria-label="Notifications">
             <Bell className="h-4 w-4" />
@@ -363,10 +371,16 @@ export function Topbar({ onMenuClick }: TopbarProps) {
   );
 }
 
+/** Notification types that sound the alarm when they arrive. */
+const ALARM_TYPES = new Set(["geofence_violation"]);
+
 /** Shows toast for new critical/warning notifications as they arrive via polling */
 function RealtimeAlertToast({ items }: { items?: any[] }) {
+  const router = useRouter();
   const seenRef = useRef<Set<number>>(new Set());
   const initialLoadedRef = useRef(false);
+
+  useEffect(() => primeAlarmAudio(), []);
 
   useEffect(() => {
     if (!items) return;
@@ -386,11 +400,23 @@ function RealtimeAlertToast({ items }: { items?: any[] }) {
     for (const n of items) {
       if (n?.notification_id && !seenRef.current.has(n.notification_id)) {
         seenRef.current.add(n.notification_id);
-        if (n.severity === "critical" || n.severity === "warning") {
+        if (ALARM_TYPES.has(n.type)) {
+          // Stays on screen until dismissed, beeps, and offers to show the firearm on the map.
+          playAlarm();
+          toast.error(n.title, {
+            description: alarmAudioBlocked()
+              ? `${n.message} (Click anywhere on the page to enable the alarm sound.)`
+              : n.message,
+            duration: Infinity,
+            action: { label: "Locate", onClick: () => router.push("/geofences") },
+          });
+        } else if (n.severity === "critical" || n.severity === "warning") {
           toast[n.severity === "critical" ? "error" : "warning"](n.title, {
             description: n.message,
             duration: 8000,
           });
+        } else if (n.type === "geofence_return") {
+          toast.success(n.title, { description: n.message, duration: 8000 });
         }
       }
     }

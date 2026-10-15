@@ -10,11 +10,11 @@ class RoleSeeder extends Seeder
     public function run(): void
     {
         $roles = [
-            ['role_name' => Role::ADMIN,            'description' => 'Full system control: users, settings, audits.'],
-            ['role_name' => Role::COMMAND_OFFICER,  'description' => 'View-all dashboards, reports, situational awareness.'],
-            ['role_name' => Role::S4_OFFICER,       'description' => 'Logistics: approve/record issuance, returns, stocks.'],
-            ['role_name' => Role::ARMORY_CUSTODIAN, 'description' => 'Day-to-day firearm tag/issue/return; QR scanning.'],
-            ['role_name' => Role::PERSONNEL,        'description' => 'Authenticate, view assigned firearm, return.'],
+            ['role_name' => Role::ADMIN,            'description' => 'System account: users, settings, audits, technical support.'],
+            ['role_name' => Role::COMMAND_OFFICER,  'description' => 'Oversees the whole system; manages users; approves S4 requests.'],
+            ['role_name' => Role::S4_OFFICER,       'description' => 'Logistics: requests new firearms and repair budgets from the Command Officer.'],
+            ['role_name' => Role::ARMORY_CUSTODIAN, 'description' => 'Releases and receives firearms; checks firearms that need repair.'],
+            ['role_name' => Role::PERSONNEL,        'description' => 'Borrows firearms; sees only their own issued firearm.'],
         ];
 
         foreach ($roles as $row) {

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Notification;
 use App\Models\SystemSetting;
 use App\Models\User;
+use App\Services\AccountNotifier;
 use App\Services\AuditLogger;
 use App\Services\BiometricProof;
 use App\Services\EmailDeliveryService;
@@ -105,8 +106,10 @@ class AuthController extends Controller
                 }
 
                 AuditLogger::log('failed_login', "Failed password for {$accountKey}", $user, request: $request);
+                AccountNotifier::failedLogin($user, $request, 'password');
             } else {
                 AuditLogger::log('failed_login', "Unknown username or email {$input}", request: $request);
+                AccountNotifier::failedLogin(null, $request, 'username or password', $input);
             }
 
             return response()->json(['message' => 'Invalid credentials.'], 401);
@@ -425,6 +428,7 @@ class AuthController extends Controller
 
         if (! $this->google2fa->verifyKey($user->totp_secret, $data['code'], 1)) {
             AuditLogger::log('failed_login', 'Invalid TOTP', $user, request: $request);
+            AccountNotifier::failedLogin($user, $request, 'authenticator (TOTP) code');
             return response()->json(['message' => 'Invalid TOTP code.'], 401);
         }
 
@@ -487,6 +491,7 @@ class AuthController extends Controller
         if ($user->biometric_enrolled && $user->biometric_data) {
             if (! hash_equals($user->biometric_data, $hash)) {
                 AuditLogger::log('failed_login', 'Biometric mismatch', $user, request: $request);
+                AccountNotifier::failedLogin($user, $request, 'fingerprint');
                 return response()->json(['message' => 'Fingerprint does not match.'], 401);
             }
         } else {
@@ -569,6 +574,7 @@ class AuthController extends Controller
             )->plainTextToken;
 
             AuditLogger::log('login', "Successful login by {$user->username}", $user, request: $request);
+            AccountNotifier::newLogin($user, $request);
 
             $user->load('role');
             $expiresIn = SystemSetting::isSessionExpiryEnabled()
@@ -641,6 +647,7 @@ class AuthController extends Controller
         $user->update(['password' => Hash::make($data['new_password'])]);
 
         AuditLogger::log('password_change', "Password changed for {$user->username}", $user, request: $request);
+        AccountNotifier::accountChanged($user, $user, ['password'], $request);
 
         return response()->json(['message' => 'Password updated successfully.']);
     }
@@ -676,6 +683,7 @@ class AuthController extends Controller
         ]);
 
         AuditLogger::log('totp_reset', "TOTP self-reset by {$user->username}", $user, request: $request);
+        AccountNotifier::accountChanged($user, $user, ['authenticator (TOTP) reset'], $request);
 
         return response()->json([
             'message'      => 'TOTP has been reset. You will re-enroll on next login.',
@@ -696,6 +704,7 @@ class AuthController extends Controller
         ]);
 
         AuditLogger::log('biometric_reset', "Biometric self-reset by {$user->username}", $user, request: $request);
+        AccountNotifier::accountChanged($user, $user, ['fingerprint reset'], $request);
 
         return response()->json([
             'message'            => 'Biometric data has been reset. You will re-enroll on next login.',

@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { useAuthStore, hasRole } from "@/store/auth";
 import { useQrCamera, type ScanFeedback } from "@/lib/use-qr-camera";
 import { ScanDetectionOverlay } from "@/components/scan/scan-detection-overlay";
 import { decodeQrFromFile } from "@/lib/qr-decoder";
@@ -82,6 +83,8 @@ interface RecentScan {
 
 export default function ScanPage() {
   const router = useRouter();
+  // Only the Armory Custodian releases and receives firearms.
+  const canRelease = hasRole(useAuthStore((s) => s.user), "Administrator", "Armory Custodian");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -510,14 +513,16 @@ export default function ScanPage() {
 
                   {/* Operational Action Buttons */}
                   <div className="space-y-2 pt-3 border-t border-olive-700/20 mt-auto">
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => router.push(`/transactions/new?equipment_id=${hit.equipment_id}`)}
-                        className="btn-primary text-xs py-2 flex items-center justify-center gap-1.5"
-                      >
-                        <span>{isCheckedOut ? "Process Return" : "Issue Firearm"}</span>
-                        <ArrowRight className="h-3.5 w-3.5" />
-                      </button>
+                    <div className={canRelease ? "grid grid-cols-2 gap-2" : "grid grid-cols-1 gap-2"}>
+                      {canRelease && (
+                        <button
+                          onClick={() => router.push(`/transactions/new?equipment_id=${hit.equipment_id}`)}
+                          className="btn-primary text-xs py-2 flex items-center justify-center gap-1.5"
+                        >
+                          <span>{isCheckedOut ? "Process Return" : "Issue Firearm"}</span>
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </button>
+                      )}
 
                       <button
                         onClick={() => router.push(`/firearms/${hit.equipment_id}`)}

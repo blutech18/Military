@@ -6,12 +6,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Wrench, Loader2, Calendar, AlertTriangle, CheckCircle, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import { fmtDate, CONDITIONS } from "@/lib/utils";
+import { fmtDate, fmtPeso, wholePesoInput, CONDITIONS, MAINTENANCE_RESULTS } from "@/lib/utils";
 import { DataError } from "@/components/ui/data-error";
 
 export default function MaintenancePage() {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  const [centavosHint, setCentavosHint] = useState(false);
   const [tab, setTab] = useState<"history" | "schedule">("history");
   const [page, setPage] = useState(1);
 
@@ -30,10 +31,10 @@ export default function MaintenancePage() {
     description: "",
     maintenance_date: new Date().toISOString().slice(0, 10),
     next_schedule: "",
-    condition_before: 70,
-    condition_after: 90,
     maintenance_type: "Inspection",
-    cost: 0,
+    result_status: 1,
+    // Kept as text so typing replaces the leading 0 ("0" then "1" gives "1", not "01").
+    cost: "0",
     remarks: "",
   });
 
@@ -43,6 +44,8 @@ export default function MaintenancePage() {
       toast.success("Maintenance recorded.");
       setShowForm(false);
       qc.invalidateQueries({ queryKey: ["maintenance"] });
+      // The result changes the firearm's status (Available / Maintenance) and next due date.
+      qc.invalidateQueries({ queryKey: ["all-firearms"] });
     },
     onError: (e: any) => toast.error(e.response?.data?.message ?? "Failed."),
   });
@@ -135,15 +138,15 @@ export default function MaintenancePage() {
                     <input type="date" className="input-field w-full" value={form.next_schedule}
                            onChange={(e) => setForm({ ...form, next_schedule: e.target.value })} />
                   </div>
-                  <div>
-                    <label className="text-xs text-steel-400 mb-1 block">Condition Before ({form.condition_before}%)</label>
-                    <input type="range" min={0} max={100} className="w-full accent-olive-400" value={form.condition_before}
-                           onChange={(e) => setForm({ ...form, condition_before: Number(e.target.value) })} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-steel-400 mb-1 block">Condition After ({form.condition_after}%)</label>
-                    <input type="range" min={0} max={100} className="w-full accent-olive-400" value={form.condition_after}
-                           onChange={(e) => setForm({ ...form, condition_after: Number(e.target.value) })} />
+                  <div className="md:col-span-2">
+                    <label className="text-xs text-steel-400 mb-1 block">Firearm Status After {form.maintenance_type} <span className="text-red-400">*</span></label>
+                    <select className="input-field w-full h-[42px]" value={form.result_status}
+                            onChange={(e) => setForm({ ...form, result_status: Number(e.target.value) })}>
+                      {Object.entries(MAINTENANCE_RESULTS).map(([value, r]) => (
+                        <option key={value} value={value}>{r.label}</option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-steel-400 mt-1">{MAINTENANCE_RESULTS[form.result_status]?.hint}</p>
                   </div>
                 </div>
               </div>
@@ -154,8 +157,14 @@ export default function MaintenancePage() {
                 <div className="grid md:grid-cols-[1fr_2fr] gap-3">
                   <div>
                     <label className="text-xs text-steel-400 mb-1 block">Cost (PHP)</label>
-                    <input type="number" min={0} step="0.01" className="input-field w-full" value={form.cost}
-                           onChange={(e) => setForm({ ...form, cost: Number(e.target.value) })} />
+                    <input type="text" inputMode="numeric" className="input-field w-full" value={form.cost}
+                           onChange={(e) => {
+                             const { value, droppedCentavos } = wholePesoInput(e.target.value);
+                             setCentavosHint(droppedCentavos);
+                             setForm({ ...form, cost: value });
+                           }}
+                           onBlur={() => form.cost === "" && setForm({ ...form, cost: "0" })} />
+                    {centavosHint && <p className="text-[11px] text-amber-300 mt-1">Whole pesos only, no centavos.</p>}
                   </div>
                   <div>
                     <label className="text-xs text-steel-400 mb-1 block">Description <span className="text-red-400">*</span></label>
@@ -246,7 +255,7 @@ export default function MaintenancePage() {
                 <th className="text-center">Firearm</th>
                 <th className="text-center">Type</th>
                 <th className="text-center px-3">Description</th>
-                <th className="text-center">Before / After</th>
+                <th className="text-center">Status After</th>
                 <th className="text-center">Tech</th>
                 <th className="text-center">Cost</th>
               </tr>
@@ -289,13 +298,9 @@ export default function MaintenancePage() {
                   <td className="text-center text-xs text-steel-200 max-w-md px-3 py-2 leading-relaxed truncate" title={m.description}>
                     {m.description}
                   </td>
-                  <td className="text-center font-mono text-xs text-steel-300 whitespace-nowrap">
-                    <span className={m.condition_before < 70 ? "text-amber-400" : "text-steel-300"}>
-                      {m.condition_before}%
-                    </span>
-                    <span className="text-steel-600 mx-1">→</span>
-                    <span className="text-emerald-400 font-semibold">
-                      {m.condition_after}%
+                  <td className="text-center whitespace-nowrap">
+                    <span className={`pill text-[10px] ${MAINTENANCE_RESULTS[m.result_status]?.tone ?? "pill-muted"}`}>
+                      {MAINTENANCE_RESULTS[m.result_status]?.label ?? "—"}
                     </span>
                   </td>
                   <td className="text-center text-xs text-steel-300 whitespace-nowrap">
@@ -303,7 +308,7 @@ export default function MaintenancePage() {
                     {m.technician?.first_name} {m.technician?.last_name}
                   </td>
                   <td className="text-center font-mono text-xs text-steel-300 whitespace-nowrap">
-                    {Number(m.cost) > 0 ? `PHP ${Number(m.cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+                    {Number(m.cost) > 0 ? fmtPeso(m.cost) : "—"}
                   </td>
                 </tr>
               ))}

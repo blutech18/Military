@@ -24,9 +24,40 @@ class TransactionController extends Controller
             ->when($request->filled('status'), fn($qq) => $qq->where('status', $request->string('status')))
             ->when($request->filled('user_id'), fn($qq) => $qq->where('user_id', $request->integer('user_id')))
             ->when($request->filled('equipment_id'), fn($qq) => $qq->where('equipment_id', $request->integer('equipment_id')))
+            // Free-text search: borrower name/rank/username, firearm serial/model, or "#12".
+            ->when($request->string('search')->trim()->value(), function ($qq, $s) {
+                $like = '%' . addcslashes($s, '%_\\') . '%';
+                $qq->where(function ($w) use ($s, $like) {
+                    $id = ltrim($s, '#');
+                    if (ctype_digit($id)) {
+                        $w->orWhere('transaction_id', (int) $id);
+                    }
+                    $w->orWhereHas('user', fn($u) => $u->where('first_name', 'like', $like)
+                            ->orWhere('last_name', 'like', $like)
+                            ->orWhere('username', 'like', $like)
+                            ->orWhereRaw("CONCAT_WS(' ', `rank`, first_name, last_name) LIKE ?", [$like])
+                            ->orWhereRaw("CONCAT_WS(' ', first_name, last_name) LIKE ?", [$like]))
+                      ->orWhereHas('firearm', fn($f) => $f->where('serial_number', 'like', $like)
+                            ->orWhere('model', 'like', $like));
+                });
+            })
             ->latest('checkout_at');
 
         return response()->json($q->paginate($request->integer('per_page', 15)));
+    }
+
+    /**
+     * Active personnel a firearm can be issued to: names only, for the issuance form. The
+     * custodian who issues firearms has no access to User Management.
+     */
+    public function personnel(Request $request): JsonResponse
+    {
+        $people = User::where('status', User::STATUS_ACTIVE)
+            ->whereHas('role', fn($q) => $q->where('role_name', Role::PERSONNEL))
+            ->orderBy('last_name')
+            ->get(['user_id', 'rank', 'first_name', 'last_name']);
+
+        return response()->json(['data' => $people]);
     }
 
     public function show(Request $request, int $id): JsonResponse
@@ -46,7 +77,7 @@ class TransactionController extends Controller
 
     /**
      * ISSUANCE WORKFLOW (server side).
-     * Caller (S4 Officer / Armory Custodian) authorizes; the personnel must already be authenticated separately.
+     * Caller (Armory Custodian, the only role that releases firearms) authorizes; the personnel must already be authenticated separately.
      */
     public function issue(Request $request): JsonResponse
     {
@@ -54,7 +85,9 @@ class TransactionController extends Controller
             'equipment_id'      => ['required', 'exists:firearm_equipment,equipment_id'],
             'user_id'           => ['required', 'exists:users,user_id'],
             'expected_return_at'=> ['required', 'date', 'after:now'],
-            'purpose'           => ['required', 'integer', 'between:1,4'],
+            // Issuance is for Training or Operation only. Maintenance and inspection are
+            // logged on the Maintenance page; 3/4 survive only on historical rows.
+            'purpose'           => ['required', 'integer', 'in:' . Transaction::PURPOSE_TRAINING . ',' . Transaction::PURPOSE_OPERATION],
             'condition_on_issue'=> ['required', 'integer', 'between:1,4'],
             'notes'             => ['nullable', 'string', 'max:500'],
             'gps_tracking_enabled' => ['sometimes', 'boolean'],

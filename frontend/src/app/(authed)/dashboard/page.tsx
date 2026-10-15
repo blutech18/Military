@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import dynamic from "next/dynamic";
 import {
   Shield, ShieldCheck, ShieldAlert, Wrench, Clock, Users, BellRing, Crosshair, BarChart3, History, MapPinned,
+  ClipboardCheck, ClipboardList,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { fmtRelative, fmtDate, PURPOSES, cn } from "@/lib/utils";
@@ -289,7 +290,14 @@ function S4Dashboard({ data, isLoading }: { data?: DashboardSummary; isLoading: 
       </div>
 
       {/* Quick actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <Link href="/requests" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent group">
+          <div className="flex items-center gap-2">
+            <ClipboardCheck className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">Requests</p>
+          </div>
+          <p className="text-xs text-steel-400 mt-1.5">Request new firearms or a repair budget from the Command Officer.</p>
+        </Link>
         <Link href="/firearms" className="glass rounded-xl p-4 hover:border-olive-600/40 transition border border-transparent group">
           <div className="flex items-center gap-2">
             <Shield className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
@@ -493,12 +501,12 @@ function PersonnelDashboard({ data, isLoading, userName }: { data?: DashboardSum
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Link href="/scan" className="glass rounded-xl p-5 hover:border-olive-600/40 transition border border-transparent group">
+        <Link href="/transactions" className="glass rounded-xl p-5 hover:border-olive-600/40 transition border border-transparent group">
           <div className="flex items-center gap-2">
-            <Crosshair className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
-            <p className="font-semibold text-olive-100 text-sm">Scan to Return</p>
+            <ClipboardList className="h-4 w-4 text-olive-300 shrink-0 group-hover:text-olive-200 transition-colors" />
+            <p className="font-semibold text-olive-100 text-sm">My Borrowing History</p>
           </div>
-          <p className="text-xs text-steel-400 mt-1.5">Scan a firearm's QR code to complete a return.</p>
+          <p className="text-xs text-steel-400 mt-1.5">Firearms you borrowed and when each is due back. Return them to the Armory Custodian.</p>
         </Link>
         <Link href="/firearms" className="glass rounded-xl p-5 hover:border-olive-600/40 transition border border-transparent group">
           <div className="flex items-center gap-2">

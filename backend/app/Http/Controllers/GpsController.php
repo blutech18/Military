@@ -8,6 +8,7 @@ use App\Models\GpsLog;
 use App\Models\Notification;
 use App\Models\Transaction;
 use App\Services\AuditLogger;
+use App\Services\TrackerWatchdog;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -78,9 +79,11 @@ class GpsController extends Controller
 
         $insideAny = false;
         $insideArmory = false;
+        $zoneNames = [];
         foreach (GpsLocation::all() as $location) {
             if ($location->contains((float) $data['latitude'], (float) $data['longitude'])) {
                 $insideAny = true;
+                $zoneNames[] = $location->location_name;
                 if ($location->is_armory) {
                     $insideArmory = true;
                 }
@@ -93,6 +96,7 @@ class GpsController extends Controller
                 $capturedAt,
                 $insideAny,
                 $insideArmory,
+                $zoneNames,
                 $signatureHeader,
                 $request
             ) {
@@ -151,29 +155,58 @@ class GpsController extends Controller
                     'signature'          => substr($signatureHeader, 0, 128),
                 ]);
 
+                TrackerWatchdog::seen($data['device_id'], $firearm, $activeTransaction);
+
                 $enteredUnsafeState = ! $insideAny
                     && (! $previousEquipmentLog || $previousEquipmentLog->is_inside_geofence === true);
+                $cameBackInside = $insideAny
+                    && $previousEquipmentLog && $previousEquipmentLog->is_inside_geofence === false;
 
+                $holder = optional($activeTransaction->user)->fullName() ?? 'unknown personnel';
+                $payload = [
+                    'lat'            => $data['latitude'],
+                    'lon'            => $data['longitude'],
+                    'transaction_id' => $activeTransaction->transaction_id,
+                    'zones'          => $zoneNames,
+                ];
+
+                // Everyone who oversees the armory is alerted, not only the issuing custodian.
                 if ($enteredUnsafeState) {
-                    Notification::create([
-                        'user_id'      => $activeTransaction->authorized_by,
+                    $nearest = GpsLocation::all()
+                        ->map(function ($z) use ($data) {
+                            $d = $z->distanceTo((float) $data['latitude'], (float) $data['longitude']);
+                            // Distance past the zone's edge, not to its centre.
+                            return ['name' => $z->location_name, 'm' => $d === null ? null : max(0, $d - (float) $z->radius_meters)];
+                        })
+                        ->filter(fn($z) => $z['m'] !== null)
+                        ->sortBy('m')
+                        ->first();
+                    $where = $nearest ? sprintf(' (about %d m outside %s)', round($nearest['m']), $nearest['name']) : '';
+
+                    Notification::notifyRoles([
                         'equipment_id' => $firearm->equipment_id,
                         'type'         => 'geofence_violation',
                         'severity'     => Notification::SEVERITY_CRITICAL,
                         'title'        => 'Geofence Violation',
-                        'message'      => "{$firearm->serial_number} left all authorized zones.",
-                        'payload'      => [
-                            'lat' => $data['latitude'],
-                            'lon' => $data['longitude'],
-                            'transaction_id' => $activeTransaction->transaction_id,
-                        ],
-                    ]);
+                        'message'      => "{$firearm->serial_number} ({$holder}) left all authorized zones{$where}.",
+                        'payload'      => $payload,
+                    ], alsoUserIds: [$activeTransaction->authorized_by], emailUserIds: [$activeTransaction->authorized_by]);
+                } elseif ($cameBackInside) {
+                    Notification::notifyRoles([
+                        'equipment_id' => $firearm->equipment_id,
+                        'type'         => 'geofence_return',
+                        'severity'     => Notification::SEVERITY_INFO,
+                        'title'        => 'Back Inside Zone',
+                        'message'      => "{$firearm->serial_number} ({$holder}) is back inside " . implode(', ', $zoneNames) . '.',
+                        'payload'      => $payload,
+                    ], alsoUserIds: [$activeTransaction->authorized_by]);
                 }
 
                 return response()->json([
                     'ok'              => true,
                     'gps_log_id'      => $log->gps_log_id,
                     'inside_geofence' => $insideAny,
+                    'zones'           => $zoneNames,
                     'inside_armory'   => $insideArmory,
                 ]);
             });
@@ -196,13 +229,15 @@ class GpsController extends Controller
         $onlineWindow = max(60, $intervalSec * 4);
         $freshAfter = now()->subSeconds($onlineWindow);
 
+        $zones = GpsLocation::all();
+
         $items = FirearmEquipment::with(['currentLocation', 'category'])
             ->whereIn('availability_status', [
                 FirearmEquipment::STATUS_CHECKED_OUT,
                 FirearmEquipment::STATUS_OVERDUE,
             ])
             ->get()
-            ->map(function (FirearmEquipment $f) use ($freshAfter) {
+            ->map(function (FirearmEquipment $f) use ($freshAfter, $zones) {
                 $latest = $f->latestGps();
                 $tx     = $f->activeTransaction();
                 $location = $f->currentLocation;
@@ -246,6 +281,11 @@ class GpsController extends Controller
                     'captured_at'    => $latest?->captured_at,
                     'received_at'    => $latest?->received_at,
                     'inside_geofence'=> $latest?->is_inside_geofence,
+                    // Zones the shown position falls in; empty means outside all of them.
+                    'zones'          => $lat === null ? [] : $zones
+                        ->filter(fn($z) => $z->contains((float) $lat, (float) $lon))
+                        ->pluck('location_name')
+                        ->values(),
                     'battery_pct'    => $latest?->battery_pct,
                     'device_id'      => $latest?->device_id,
                     'iot_online'     => $hasLiveIot,
@@ -258,7 +298,7 @@ class GpsController extends Controller
 
         return response()->json([
             'items'         => $items,
-            'geofences'     => GpsLocation::all(),
+            'geofences'     => $zones,
             'updated_at'    => now(),
             'poll_interval' => $intervalSec,
             'online_window_sec' => $onlineWindow,
@@ -331,6 +371,8 @@ class GpsController extends Controller
 
             while (! connection_aborted()) {
                 if (time() - $started > $maxRuntime) break;
+
+                TrackerWatchdog::maybeSweep();
 
                 $payload = $this->computeIotStatus($intervalSec, $onlineWindow);
                 $sig     = $this->signaturizeStatus($payload);
@@ -437,6 +479,10 @@ class GpsController extends Controller
     {
         $intervalSec  = (int) config('armory.gps.interval_seconds', 30);
         $onlineWindow = max(60, $intervalSec * 4);
+
+        // The topbar polls this every few seconds, which makes it a reliable place to notice
+        // a tracker that has gone quiet even when the Laravel scheduler is not running.
+        TrackerWatchdog::maybeSweep();
 
         return response()->json($this->computeIotStatus($intervalSec, $onlineWindow));
     }

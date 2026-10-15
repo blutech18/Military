@@ -95,6 +95,8 @@ interface LiveItem {
   captured_at?: string | null;
   received_at?: string | null;
   inside_geofence?: boolean;
+  /** Zones the shown position falls in; empty means outside all of them. */
+  zones?: string[];
   battery_pct?: number | null;
   device_id?: string | null;
   iot_online: boolean;
@@ -133,6 +135,11 @@ function InitialFit({ points }: { points: [number, number][] }) {
   useEffect(() => {
     if (done.current || points.length === 0) return;
     done.current = true;
+    // A single point has no extent to fit; centre on it at street level instead.
+    if (points.length === 1) {
+      map.setView(points[0], 17);
+      return;
+    }
     map.fitBounds(L.latLngBounds(points.map((p) => L.latLng(p[0], p[1]))).pad(0.4));
   }, [points, map]);
 
@@ -179,14 +186,17 @@ function FollowTarget({
   return null;
 }
 
-export function LiveMap() {
+/**
+ * @param focusId show only this firearm and follow it (e.g. "locate" from an overdue transaction).
+ */
+export function LiveMap({ focusId }: { focusId?: number } = {}) {
   const mapKey = useMapMountKey();
   const interval = Number(process.env.NEXT_PUBLIC_GPS_POLL_SECONDS ?? 30) * 1000;
   const lat = Number(process.env.NEXT_PUBLIC_DEFAULT_MAP_CENTER_LAT ?? 8.484460);
   const lon = Number(process.env.NEXT_PUBLIC_DEFAULT_MAP_CENTER_LON ?? 124.657010);
 
   /** equipment_id being followed; null means "show everything". */
-  const [trackedId, setTrackedId] = useState<number | null>(null);
+  const [trackedId, setTrackedId] = useState<number | null>(focusId ?? null);
   const [following, setFollowing] = useState(true);
 
   const { data } = useQuery({
@@ -199,7 +209,10 @@ export function LiveMap() {
     },
   });
 
-  const items = useMemo(() => data?.items ?? [], [data?.items]);
+  const items = useMemo(
+    () => (data?.items ?? []).filter((i) => focusId == null || i.equipment_id === focusId),
+    [data?.items, focusId]
+  );
 
   /* Default to the first firearm sending live telemetry, then keep that choice. */
   const autoTarget = useMemo(() => {
@@ -361,6 +374,19 @@ export function LiveMap() {
 
                 {/* Formal Key-Value Specs */}
                 <div className="space-y-1.5 py-2 text-[11px]">
+                  {item.zones && item.telemetry_source !== "placeholder" && (
+                    <div className="flex justify-between items-center gap-2">
+                      <span className="text-steel-400">Zone</span>
+                      {item.zones.length > 0 ? (
+                        <span className="text-emerald-300 font-medium truncate text-right" title={item.zones.join(", ")}>
+                          {item.zones.join(", ")}
+                        </span>
+                      ) : (
+                        <span className="text-red-300 font-semibold">Outside all zones</span>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex justify-between items-center">
                     <span className="text-steel-400">Condition</span>
                     <span className="text-steel-200 font-medium">{item.condition}</span>
@@ -532,7 +558,7 @@ export function LiveMap() {
 function markerFor(item: LiveItem) {
   if (item.telemetry_source === "placeholder") return placeholderMarker;
   if (item.telemetry_source === "stale") return staleMarker;
-  if (item.status === "Overdue") return overdueMarker;
+  if (item.status === "Overdue" || item.zones?.length === 0) return overdueMarker;
   return tactical;
 }
 

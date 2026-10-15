@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { fmtRelative } from "@/lib/utils";
@@ -7,8 +8,33 @@ import { CheckCheck, BellRing } from "lucide-react";
 import { toast } from "sonner";
 import { DataError } from "@/components/ui/data-error";
 
+const TYPE_LABELS: Record<string, string> = {
+  failed_login: "Failed Sign-in",
+  new_login: "New Sign-in",
+  account_change: "Account Changed",
+  account_locked: "Account Locked",
+  password_reset: "Password Reset",
+  geofence_violation: "Geofence Breach",
+  geofence_return: "Back in Zone",
+  signal_lost: "Signal Lost",
+  signal_restored: "Signal Restored",
+  iot_device_online: "Tracker Online",
+};
+
+/** Filter groups for the client's notification categories. */
+const GROUPS: { key: string; label: string; types?: string[] }[] = [
+  { key: "all", label: "All" },
+  { key: "account", label: "Sign-ins & Account", types: ["failed_login", "new_login", "account_change", "account_locked", "password_reset"] },
+  { key: "tracker", label: "GPS & IoT Tracker", types: ["signal_lost", "signal_restored", "iot_device_online", "geofence_violation", "geofence_return"] },
+];
+
+function typeLabel(type: string): string {
+  return TYPE_LABELS[type] ?? type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export default function NotificationsPage() {
   const qc = useQueryClient();
+  const [group, setGroup] = useState("all");
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["notifications-page"],
     queryFn: async () => (await api.get("/notifications", { params: { per_page: 100 } })).data,
@@ -34,11 +60,27 @@ export default function NotificationsPage() {
         </button>
       </div>
 
+      <div className="flex flex-wrap gap-2" role="group" aria-label="Notification categories">
+        {GROUPS.map((g) => (
+          <button
+            key={g.key}
+            type="button"
+            onClick={() => setGroup(g.key)}
+            aria-pressed={group === g.key}
+            className={`rounded-md border px-3 py-1.5 text-xs font-medium transition ${
+              group === g.key ? "border-olive-400/70 bg-olive-700/35 text-olive-50" : "border-steel-700/70 bg-steel-900/50 text-steel-300 hover:text-olive-100"
+            }`}
+          >
+            {g.label}
+          </button>
+        ))}
+      </div>
+
       <div className="space-y-2">
         {isError && <DataError onRetry={refetch} />}
         {isLoading && !isError && <p className="text-steel-300">Loading…</p>}
         {data?.data?.length === 0 && <p className="text-steel-400">No notifications.</p>}
-        {data?.data?.map((n: any) => (
+        {data?.data?.filter((n: any) => { const types = GROUPS.find((g) => g.key === group)?.types; return !types || types.includes(n.type); }).map((n: any) => (
           <div key={n.notification_id} className={`glass rounded-md p-3 flex gap-3 border-l-4 ${
             n.severity === "critical" ? "border-red-500" : n.severity === "warning" ? "border-amber-500" : "border-blue-500"
           }`}>
@@ -50,7 +92,7 @@ export default function NotificationsPage() {
               <p className="text-xs text-steel-300 mt-0.5">{n.message}</p>
               <div className="flex gap-2 mt-2">
                 <span className={`pill pill-${n.severity === "critical" ? "critical" : n.severity === "warning" ? "warn" : "info"}`}>{n.severity.toUpperCase()}</span>
-                <span className="pill pill-muted">{n.type}</span>
+                <span className="pill pill-muted">{typeLabel(n.type)}</span>
                 {n.firearm && <span className="pill pill-tactical">{n.firearm.serial_number}</span>}
               </div>
             </div>

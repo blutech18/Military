@@ -31,7 +31,7 @@ function NewIssuanceContent() {
 
   const { data: personnel } = useQuery({
     queryKey: ["personnel"],
-    queryFn: async () => (await api.get("/users", { params: { role: "Personnel", only_active: 1, per_page: 100 } })).data,
+    queryFn: async () => (await api.get("/transactions/personnel")).data,
     retry: false,
   });
 
@@ -107,8 +107,6 @@ function NewIssuanceContent() {
             <select className="input-field" value={form.purpose} onChange={(e) => set("purpose", Number(e.target.value))}>
               <option value={1}>Training</option>
               <option value={2}>Operation</option>
-              <option value={3}>Maintenance</option>
-              <option value={4}>Inspection</option>
             </select>
           </Field>
 

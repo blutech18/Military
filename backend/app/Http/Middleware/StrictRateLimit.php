@@ -23,9 +23,18 @@ class StrictRateLimit
             ? $perSecond
             : (int) config('armory.rate_limit_per_second', 5);
 
+        // This runs before auth:sanctum, and the default guard is the session one, so a plain
+        // $request->user() is always null for API tokens: every signed-in user on one machine
+        // would share a single "guest" bucket. Ask the Sanctum guard (it caches the user, so
+        // auth:sanctum does not look the token up twice).
+        $user = $request->user() ?? $request->user('sanctum');
+
+        // The limit is part of the key: routes with their own budget (topbar polling at 30/s, IoT
+        // ingest at 60/s) must not use up the default budget of normal requests.
         $key = sprintf(
-            'armory-rl:%s:%s',
-            optional($request->user())->user_id ?? 'guest',
+            'armory-rl:%d:%s:%s',
+            $perSecond,
+            optional($user)->user_id ?? 'guest',
             $request->ip()
         );
 

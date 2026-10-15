@@ -37,7 +37,8 @@ export default function FirearmDetailPage() {
   const router = useRouter();
   const { id } = useParams() as { id: string };
   const user = useAuthStore((s) => s.user);
-  const canManage = hasRole(user, "Administrator", "S4 Officer", "Armory Custodian");
+  // Issue / return buttons: only the Armory Custodian releases and receives firearms.
+  const canManage = hasRole(user, "Administrator", "Armory Custodian");
 
   const [qrSvg, setQrSvg] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(false);

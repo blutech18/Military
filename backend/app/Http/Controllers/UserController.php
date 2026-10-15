@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Role;
 use App\Models\User;
+use App\Services\AccountNotifier;
 use App\Services\AuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -44,13 +45,15 @@ class UserController extends Controller
             'status'             => ['nullable', 'integer', 'in:0,1'],
         ]);
 
+        $this->assertMayManage($request, null, (int) $data['role_id']);
         $this->assertClearanceFitsRole((int) $data['role_id'], (int) $data['security_clearance']);
 
         $data['password'] = Hash::make($data['password']);
         $data['status']   = $data['status'] ?? User::STATUS_ACTIVE;
 
         $user = User::create($data);
-        AuditLogger::log('user_create', "Created user {$user->username}", $request->user(), request: $request);
+        AuditLogger::log('user_create', "Created user {$user->username}", $request->user(), request: $request,
+            metadata: ['created' => $user->only(['user_id', 'username', 'email', 'rank', 'first_name', 'last_name']) + ['role' => optional($user->fresh('role')->role)->role_name]]);
         return response()->json($user->fresh('role'), 201);
     }
 
@@ -76,18 +79,31 @@ class UserController extends Controller
             'password'           => ['sometimes', 'string', 'min:10', 'max:200'],
         ]);
 
+        $this->assertMayManage($request, $user, isset($data['role_id']) ? (int) $data['role_id'] : null);
+
         // Check the combination the account will end up with, whichever of the two changed.
         $this->assertClearanceFitsRole(
             (int) ($data['role_id'] ?? $user->role_id),
             (int) ($data['security_clearance'] ?? $user->security_clearance),
         );
 
+        $changes = AuditLogger::diff($user->getAttributes(), $data);
+        if (isset($changes['role_id'])) {
+            $names = Role::whereIn('role_id', [$changes['role_id']['from'], $changes['role_id']['to']])->pluck('role_name', 'role_id');
+            $changes['role'] = ['from' => $names[$changes['role_id']['from']] ?? null, 'to' => $names[$changes['role_id']['to']] ?? null];
+        }
+
         if (isset($data['password'])) {
             $data['password'] = Hash::make($data['password']);
         }
 
         $user->update($data);
-        AuditLogger::log('user_update', "Updated user {$user->username}", $request->user(), request: $request, metadata: ['fields' => array_keys($data)]);
+        AuditLogger::log('user_update', "Updated user {$user->username}", $request->user(), request: $request,
+            metadata: ['target_user_id' => $user->user_id, 'changes' => $changes]);
+        AccountNotifier::accountChanged($user, $request->user(), array_map(
+            fn($field) => str_replace(['_id', '_'], ['', ' '], $field),
+            array_keys(array_diff_key($changes, ['role_id' => true]))
+        ), $request);
 
         return response()->json($user->fresh('role'));
     }
@@ -99,12 +115,36 @@ class UserController extends Controller
         if ($user->user_id === $request->user()->user_id) {
             return response()->json(['message' => 'Cannot delete yourself.'], 422);
         }
+        $this->assertMayManage($request, $user);
+        if ($refused = $this->confirmPassword($request, "delete user {$user->username}")) {
+            return $refused;
+        }
 
         $user->update(['status' => User::STATUS_INACTIVE]);
         $user->delete();
 
-        AuditLogger::log('user_delete', "Soft-deleted user {$user->username}", $request->user(), request: $request);
+        AuditLogger::log('user_delete', "Soft-deleted user {$user->username}", $request->user(), request: $request,
+            metadata: ['deleted' => $user->only(['user_id', 'username', 'email', 'rank', 'first_name', 'last_name']) + ['role' => optional($user->role)->role_name]]);
         return response()->json(['message' => 'User archived.']);
+    }
+
+    /**
+     * A Command Officer manages every account except Administrator ones: they cannot create,
+     * change, delete or reset an Administrator, nor give anyone the Administrator role.
+     */
+    private function assertMayManage(Request $request, ?User $target, ?int $newRoleId = null): void
+    {
+        if ($request->user()->hasRole(Role::ADMIN)) {
+            return;
+        }
+
+        $adminRoleId = Role::where('role_name', Role::ADMIN)->value('role_id');
+        $touchesAdmin = ($target && (int) $target->role_id === (int) $adminRoleId)
+            || ($newRoleId !== null && $newRoleId === (int) $adminRoleId);
+
+        if ($touchesAdmin) {
+            abort(response()->json(['message' => 'Only an Administrator can manage Administrator accounts.'], 403));
+        }
     }
 
     /**
@@ -137,6 +177,7 @@ class UserController extends Controller
     public function resetMfa(Request $request, int $id): JsonResponse
     {
         $user = User::findOrFail($id);
+        $this->assertMayManage($request, $user);
 
         $user->update([
             'totp_secret'       => null,
@@ -147,11 +188,13 @@ class UserController extends Controller
 
         AuditLogger::log(
             action: 'mfa_reset',
-            description: "MFA reset for user {$user->username} by admin",
+            description: "MFA reset for user {$user->username} by {$request->user()->username}",
             user: $request->user(),
             request: $request,
             metadata: ['target_user_id' => $user->user_id],
         );
+
+        AccountNotifier::accountChanged($user, $request->user(), ['authenticator and fingerprint reset'], $request);
 
         return response()->json(['message' => "MFA reset for {$user->username}. They will re-enroll on next login."]);
     }

@@ -38,12 +38,56 @@ class Notification extends Model
         'read_at' => 'datetime',
     ];
 
+    /** Not stored: set before saving to keep a notification in-app only, without the e-mail. */
+    public bool $withoutEmail = false;
+
     protected static function booted(): void
     {
         static::created(function (Notification $notification) {
             // Dispatch email alert for critical/warning notifications
-            AlertDispatcher::dispatch($notification);
+            if (! $notification->withoutEmail) {
+                AlertDispatcher::dispatch($notification);
+            }
         });
+    }
+
+    /** Roles that watch over every firearm and get its security alerts. */
+    public const OVERSIGHT_ROLES = [Role::ADMIN, Role::COMMAND_OFFICER, Role::ARMORY_CUSTODIAN];
+
+    /**
+     * One in-app notification per active user in the given roles, plus any extra user ids.
+     *
+     * Only the users in $emailUserIds also get the e-mail. Alert e-mails are sent while the
+     * request waits, so fanning one out to every officer would slow down whatever raised it
+     * (a sign-in, or a GPS report from a tracker with an 8-second timeout).
+     *
+     * @return int number of notifications created
+     */
+    public static function notifyRoles(
+        array $attributes,
+        array $roles = self::OVERSIGHT_ROLES,
+        array $alsoUserIds = [],
+        array $emailUserIds = [],
+        array $exceptUserIds = [],
+    ): int {
+        $except = array_map('intval', array_filter($exceptUserIds));
+        $email  = array_map('intval', array_filter($emailUserIds));
+
+        $ids = User::where('status', User::STATUS_ACTIVE)
+            ->whereHas('role', fn($q) => $q->whereIn('role_name', $roles))
+            ->pluck('user_id')
+            ->merge(array_filter($alsoUserIds))
+            ->map(fn($id) => (int) $id)
+            ->unique()
+            ->reject(fn($id) => in_array($id, $except, true))
+            ->values();
+
+        foreach ($ids as $id) {
+            $notification = new static($attributes + ['user_id' => $id]);
+            $notification->withoutEmail = ! in_array($id, $email, true);
+            $notification->save();
+        }
+        return $ids->count();
     }
 
     public function user(): BelongsTo

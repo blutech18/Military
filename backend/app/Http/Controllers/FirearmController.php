@@ -119,6 +119,7 @@ class FirearmController extends Controller
             'remarks'             => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 
+        $changes = AuditLogger::diff($firearm->getAttributes(), $data);
         $firearm->update($data);
 
         AuditLogger::log(
@@ -127,7 +128,7 @@ class FirearmController extends Controller
             user: $request->user(),
             equipmentId: $firearm->equipment_id,
             request: $request,
-            metadata: ['changes' => $data],
+            metadata: ['changes' => $changes],
         );
 
         return response()->json($firearm->fresh(['category', 'currentLocation']));
@@ -137,8 +138,11 @@ class FirearmController extends Controller
     {
         $firearm = FirearmEquipment::findOrFail($id);
 
-        if ($firearm->availability_status === FirearmEquipment::STATUS_CHECKED_OUT) {
-            return response()->json(['message' => 'Cannot delete a checked-out firearm.'], 422);
+        if (in_array($firearm->availability_status, [FirearmEquipment::STATUS_CHECKED_OUT, FirearmEquipment::STATUS_OVERDUE], true)) {
+            return response()->json(['message' => 'Cannot delete a firearm that is still checked out.'], 422);
+        }
+        if ($refused = $this->confirmPassword($request, "delete firearm {$firearm->serial_number}")) {
+            return $refused;
         }
 
         $firearm->delete();
@@ -149,6 +153,7 @@ class FirearmController extends Controller
             user: $request->user(),
             equipmentId: $firearm->equipment_id,
             request: $request,
+            metadata: ['deleted' => $firearm->only(['serial_number', 'model', 'manufacturer', 'caliber', 'condition_status', 'availability_status', 'acquisition_cost'])],
         );
 
         return response()->json(['message' => 'Firearm archived.']);

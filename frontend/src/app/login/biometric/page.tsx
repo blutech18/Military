@@ -83,6 +83,13 @@ export default function BiometricPage() {
     return () => { active = false; };
   }, []);
 
+  // Count the post-failure cooldown down, so the button becomes "Try again" instead of staying locked.
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const id = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [cooldown]);
+
   // While a capture is running, mirror the bridge's touch-by-touch progress on screen.
   const progress = useBridgeProgress(scanning && mode === "bridge");
 
@@ -138,6 +145,8 @@ export default function BiometricPage() {
       setOutcome({ kind: "failed", message: text });
       setCooldown(FAILURE_COOLDOWN_SECONDS);
       setScanning(false);
+      // A capture can fail because the reader was unplugged; re-check so the button reflects it.
+      probeBridge().then(setMode);
     }
   }
 
@@ -272,7 +281,7 @@ export default function BiometricPage() {
         <button onClick={capture} disabled={scanning || !canCapture || cooldown > 0} className="btn-primary w-full mt-4 sm:mt-5 py-2.5 text-sm">
           {scanning ? (
             <><Loader2 className="h-4 w-4 animate-spin" /> {succeeded ? "Signing you in…" : bridgeAvailable ? (needed > 1 ? `Scan ${Math.min(done + 1, needed)} of ${needed}…` : "Touch the reader…") : "Verifying Demo…"}</>
-          ) : cooldown > 0 ? `Try again in ${cooldown}s` : bridgeAvailable ? (enrolling ? "Enroll Fingerprint" : "Capture Fingerprint") : mode === "demo" ? "Use Demo Placeholder" : mode === "checking" ? "Checking Scanner…" : "Scanner Required"}
+          ) : cooldown > 0 ? `Try again in ${cooldown}s` : outcome?.kind === "failed" && canCapture ? "Try Again" : bridgeAvailable ? (enrolling ? "Enroll Fingerprint" : "Capture Fingerprint") : mode === "demo" ? "Use Demo Placeholder" : mode === "checking" ? "Checking Scanner…" : "Scanner Required"}
         </button>
 
         {secondsLeft !== null && secondsLeft > 0 && (

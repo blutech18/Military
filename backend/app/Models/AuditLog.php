@@ -20,6 +20,8 @@ class AuditLog extends Model
         'user_agent',
         'metadata',
         'created_at',
+        'prev_hash',
+        'hash',
     ];
 
     protected $casts = [
@@ -39,7 +41,7 @@ class AuditLog extends Model
 
     /**
      * Audit logs are append-only — block edits & deletes from the model layer.
-     * (DB triggers should also enforce this in production.)
+     * The database enforces the same with triggers, and AuditChain detects tampering.
      */
     public function update(array $attributes = [], array $options = []): bool
     {
